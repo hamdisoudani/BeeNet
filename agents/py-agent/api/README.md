@@ -1,0 +1,1 @@
+This endpoint is dedicated to vercel
