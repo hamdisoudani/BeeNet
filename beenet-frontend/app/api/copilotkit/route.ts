@@ -9,6 +9,10 @@ import {
 
 const serviceAdapter = new ExperimentalEmptyAdapter();
 
+export const config = {
+  runtime: "edge",
+};
+
 const runtime = new CopilotRuntime({
   remoteEndpoints: [
     // Uncomment this if you want to use LangGraph JS, make sure to
