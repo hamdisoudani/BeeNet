@@ -24,3 +24,4 @@ Thumbs.db
 # LangGraph checkpoints (if persisted locally)
 checkpoints/
 venv/
+.vercel

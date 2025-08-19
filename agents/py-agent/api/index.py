@@ -3,8 +3,10 @@ This serves the "sample_agent" agent. This is an example of self-hosting an agen
 through our FastAPI integration. However, you can also host in LangGraph platform.
 """
 
-import os
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from dotenv import load_dotenv
+
 # Load environment variables from .env at startup
 load_dotenv()  # pylint: disable=wrong-import-position
 
@@ -40,11 +42,6 @@ sdk = CopilotKitRemoteEndpoint(
 )
 
 add_fastapi_endpoint(app, sdk, "/copilotkit")
-
-# add a health check endpoint and avoid using the middlewares
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
 
 # add_langgraph_fastapi_endpoint(
 #   app=app,
