@@ -41,6 +41,11 @@ sdk = CopilotKitRemoteEndpoint(
 
 add_fastapi_endpoint(app, sdk, "/copilotkit")
 
+# add a health check endpoint and avoid using the middlewares
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 # add_langgraph_fastapi_endpoint(
 #   app=app,
 #   agent=LangGraphAGUIAgent(
