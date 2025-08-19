@@ -6,6 +6,7 @@ import { Providers } from "./providers";
 import { ConversationsProvider } from "@/context/conversations";
 import SidebarAppShell from "@/components/SidebarAppShell";
 import { Toaster } from "@/components/ui/sonner";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,9 +35,14 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <Providers>
-          <ConversationsProvider>
-            <SidebarAppShell>{children}</SidebarAppShell>
-          </ConversationsProvider>
+          <SignedIn>
+            <ConversationsProvider>
+              <SidebarAppShell>{children}</SidebarAppShell>
+            </ConversationsProvider>
+          </SignedIn>
+          <SignedOut>
+            {children}
+          </SignedOut>
           <Toaster richColors />
         </Providers>
       </body>

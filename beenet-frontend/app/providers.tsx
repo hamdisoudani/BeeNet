@@ -1,6 +1,6 @@
 "use client";
 
-import { ClerkProvider } from "@clerk/nextjs";
+import { ClerkProvider, SignedIn, useAuth } from "@clerk/nextjs";
 import { ThemeProvider } from "next-themes";
 import "@copilotkit/react-ui/styles.css";
 import React from "react";
@@ -10,7 +10,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-        <StatusBootstrap />
+        <SignedIn>
+          <StatusBootstrap />
+        </SignedIn>
         {children}
       </ThemeProvider>
     </ClerkProvider>
