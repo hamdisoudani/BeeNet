@@ -10,11 +10,22 @@ from typing import Any
 from datetime import datetime, timezone
 import time
 from brain.logger import get_logger
+from brain.history import prepare_llm_context
 
 async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Literal["tool_node", "__end__"]]:
 
-    # 1. Define the model (use centralized model factory)
-    model = get_model()
+    # 1. Define the model (use centralized model factory), passing config so header overrides are respected
+    try:
+        model = get_model(config)
+    except Exception:
+        # If model initialization fails (e.g., missing API key), surface a typed error and end
+        err = {"type": "model_init_error", "message": "Failed to initialize the selected model."}
+        try:
+            state["error"] = err  # type: ignore[index]
+            await copilotkit_emit_state(config, state)
+        except Exception:
+            pass
+        return Command(goto=END, update={"error": err})
 
     # Chat node is tool-free by design
     logger = get_logger("nodes.chat")
@@ -137,13 +148,19 @@ async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Litera
         + ("```json\n" + str(plan_json) + "\n```\n\n" if plan_mode == "search" else "")
         + (f"Planner note: {plan_reason}\n\n" if plan_mode == "direct" and isinstance(plan_reason, str) and plan_reason.strip() else "")
     )
-    system_message = SystemMessage(content=persona)
+    # Prepare cleaned message history and prior search context for richer grounding
+    try:
+        recent_raw = list(state["messages"])  # type: ignore[index]
+    except Exception:
+        recent_raw = []
+    clean_msgs, prev_ctx = prepare_llm_context(state, recent_raw, limit=30)
+    persona_with_prev = persona + ("\n<previous_search_context>\n" + str(prev_ctx) + "\n</previous_search_context>\n" if prev_ctx.get("previous_searches") else "")
+    system_message = SystemMessage(content=persona_with_prev)
     logger.info("Chat system message: %s", system_message.content)
     # 4. Run the model to generate a response (with error handling)
     messages = []
     try:
-        recent = list(state["messages"])  # type: ignore[index]
-        messages = [system_message, *recent[-8:]]
+        messages = [system_message, *clean_msgs[-8:]]
     except Exception:
         messages = [system_message]
     logger.info("Chat invoking model. messages=%d", len(messages))

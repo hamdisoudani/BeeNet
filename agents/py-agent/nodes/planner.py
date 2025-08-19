@@ -11,6 +11,7 @@ from brain.state import AgentState, ResearchPlan
 from brain.model import get_planner_model
 from brain.logger import get_logger
 from copilotkit.langgraph import copilotkit_customize_config, copilotkit_emit_state
+from brain.history import prepare_llm_context
 
 def _now_iso_and_tz() -> tuple[str, str]:
     try:
@@ -32,12 +33,21 @@ def _planner_tools() -> list[Any]:
         title: str = Field(..., min_length=3, max_length=160)
         queries: List[str] = Field(default_factory=list)
 
+    class StepControls(BaseModel):
+        """Optional controls for Tavily-backed research."""
+        include_domains: Optional[List[str]] = None
+        exclude_domains: Optional[List[str]] = None
+        days: Optional[int] = Field(default=None, ge=1, le=3650)
+        max_results: Optional[int] = Field(default=None, ge=1, le=10)
+        search_depth: Optional[Literal["basic", "advanced"]] = None
+
     class SetResearchPlanArgs(BaseModel):
         """Enforced schema for planning output (compatible across Pydantic versions)."""
         mode: Literal["direct", "search"]
         steps: List[str] = Field(default_factory=list)
         reason: Optional[str] = Field(default=None, max_length=240)
         structured_steps: Optional[List[PlanStepInput]] = None
+        controls: Optional[List[StepControls]] = None  # aligns 1:1 with steps
 
     @tool(args_schema=SetResearchPlanArgs)
     def set_research_plan(
@@ -62,8 +72,20 @@ def _planner_tools() -> list[Any]:
 async def planner_node(
     state: AgentState, config: RunnableConfig
 ) -> Command[Literal["chat_node", "tool_node"]]:
+
+    print(f"Planner node called with state: {state} and config: {config}")
     logger = get_logger("nodes.planner")
-    model = get_planner_model()
+    try:
+      model = get_planner_model(config)
+    except Exception:
+      # Typed error for planner model init failures
+      try:
+        err = {"type": "planner_model_init_error", "message": "Failed to initialize planner model."}
+        state["error"] = err  # type: ignore[index]
+        await copilotkit_emit_state(config, state)
+      except Exception:
+        pass
+      return Command(goto=END, update={"error": {"type": "planner_model_init_error"}})
 
     # Ensure CopilotKit streaming config is set (do not emit tool calls to UI)
     config = copilotkit_customize_config(
@@ -102,14 +124,22 @@ async def planner_node(
         "  Provide queries now in structured_steps, e.g., [\"current weather in Canada 2025 site:weatherapi.com\", \"Canada weather today 2025 site:weather.gov\"].\n"
         "- User: 'compare pricing for AWS S3 and GCP storage' → steps = [\"Search AWS S3 current pricing\", \"Search Google Cloud Storage current pricing\"]\n"
         "  Queries example per step: [\"AWS S3 pricing 2025 site:aws.amazon.com\", \"S3 pricing 2025 multi-region\"].\n\n"
+        "Controls examples (when mode='search'):\n"
+        "- Constrain to domains: controls=[{include_domains:['techcrunch.com','cnbc.com']}]\n"
+        "- Exclude domains: controls=[{exclude_domains:['reddit.com','quora.com']}]\n"
+        "- Freshness window: controls=[{days:30}]  # last 30 days\n"
+        "- Increase depth/results: controls=[{search_depth:'advanced', max_results:8}]\n"
+        "- Per-step mix: steps=['OpenAI news','Google AI blog']; controls=[{include_domains:['openai.com'],days:90},{include_domains:['blog.google'],days:90}]\n\n"
+        "Reuse context: If prior search already answered the request (see <previous_search_context>), prefer direct mode or minimal search steps that fill only the gaps.\n\n"
         "Examples (bad):\n"
         "- 'Query weather APIs' (too generic)\n"
         "- 'Summarize findings' (synthesis is performed downstream; do not plan it)\n"
         "- 'Gather sources' (not specific to the entities requested)\n\n"
         "What to return (MANDATORY):\n"
-        "- Exactly one call to set_research_plan with args: {mode: 'direct'|'search', steps: string[<=6], reason: string, structured_steps?: {title, queries[]}[] }.\n"
+        "- Exactly one call to set_research_plan with args: {mode: 'direct'|'search', steps: string[<=6], reason: string, structured_steps?: {title, queries[]}[], controls?: StepControls[] }.\n"
         "- If mode='direct': steps must be [], and structured_steps must be omitted. Return only a short 'reason' (<= 160 chars).\n"
         "- If mode='search': steps (titles) must be specific and aligned to the user's request; put 1–3 high-quality queries per step in structured_steps.\n"
+        "- controls: optional per-step constraints (domains, date window, depth, max_results). If provided, its length must equal steps length.\n"
         "- reason must be a short rationale for the choice.\n\n"
         "Bad: Any text or multiple tool calls.\n"
         "<instruction_and_rules>\n"
@@ -126,13 +156,14 @@ async def planner_node(
         "<end_of_instruction_and_rules>\n"
     )
 
-    # Include a limited window of recent conversation for context
+    # Include cleaned conversation + previous search context for planning
     try:
         recent_messages = list(state["messages"])  # type: ignore[index]
-        recent_messages = recent_messages[-8:]
-        messages = [SystemMessage(content=SYSTEM_PROMPT), *recent_messages]
     except Exception:
-        messages = [SystemMessage(content=SYSTEM_PROMPT)]
+        recent_messages = []
+    clean_msgs, prev_ctx = prepare_llm_context(state, recent_messages, limit=30)
+    prompt_with_prev = SYSTEM_PROMPT + ("\n<previous_search_context>\n" + str(prev_ctx) + "\n</previous_search_context>\n" if prev_ctx.get("previous_searches") else "")
+    messages = [SystemMessage(content=prompt_with_prev), *clean_msgs]
 
     try:
         model_with_tool = model.bind_tools(
@@ -158,6 +189,7 @@ async def planner_node(
     reason: str | None = None
 
     structured_steps: list[dict[str, Any]] | None = None
+    controls: list[dict[str, Any]] | None = None
     try:
         if isinstance(response, AIMessage) and response.tool_calls:
             tool_call = response.tool_calls[0]
@@ -183,6 +215,33 @@ async def planner_node(
                     if not q_list:
                         continue
                     structured_steps.append({"title": title, "queries": q_list})
+            # Parse optional controls (align by index to steps)
+            cs = args.get("controls")
+            if isinstance(cs, list):
+                controls = []
+                for c in cs[:6]:
+                    if not isinstance(c, dict):
+                        controls.append({})
+                        continue
+                    out: dict[str, Any] = {}
+                    for k in ("include_domains", "exclude_domains"):
+                        v = c.get(k)
+                        if isinstance(v, list):
+                            out[k] = [str(x) for x in v[:6] if isinstance(x, (str, int, float))]
+                    d = c.get("days")
+                    if isinstance(d, (int, float)):
+                        dd = int(d)
+                        if 1 <= dd <= 3650:
+                            out["days"] = dd
+                    mr = c.get("max_results")
+                    if isinstance(mr, (int, float)):
+                        mm = int(mr)
+                        if 1 <= mm <= 10:
+                            out["max_results"] = mm
+                    sd = c.get("search_depth")
+                    if sd in ("basic", "advanced"):
+                        out["search_depth"] = sd
+                    controls.append(out)
             logger.info(
                 "Planner parsed set_research_plan: mode=%s steps=%d structured_steps=%s",
                 mode,
@@ -221,13 +280,15 @@ async def planner_node(
     if structured_steps:
         from uuid import uuid4
         plan_steps: list[dict[str, Any]] = []
-        for it in structured_steps:
+        for idx, it in enumerate(structured_steps):
+            ctrl = (controls[idx] if isinstance(controls, list) and idx < len(controls) else {}) if controls else {}
             plan_steps.append({
                 "id": str(uuid4()),
                 "title": it["title"],
                 "queries": it["queries"],
                 "results": [],
                 "status": "pending",
+                **ctrl,
             })
         plan_obj = ResearchPlan(mode=mode, steps=plan_steps, reason=reason)
     else:

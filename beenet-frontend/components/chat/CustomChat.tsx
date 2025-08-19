@@ -72,7 +72,7 @@ export default function CustomChat() {
   // Remove localStorage hydration; backend is source of truth now
 
   return (
-    <div className="relative h-[calc(100dvh-64px)] lg:h-[100dvh] max-w-4xl mx-auto w-full flex flex-col px-2 md:px-4 pt-2">
+    <div className="relative h-[calc(100dvh-64px)] lg:h-[100dvh] max-w-4xl mx-auto w-full flex flex-col px-0 sm:px-1 pt-2">
       <div className="flex-1 bg-background overflow-hidden">
         <CopilotChat
           Input={Input}
@@ -505,7 +505,8 @@ function SearchPlan({ plan, running }: { plan: any; running?: boolean }) {
           status: undefined, 
           queries: [], 
           results: [], 
-          answer: undefined 
+          answers: [],
+          error: undefined 
         };
       }
       const id = typeof s?.id === "string" ? s.id : `step-${i}`;
@@ -513,8 +514,9 @@ function SearchPlan({ plan, running }: { plan: any; running?: boolean }) {
       const status = typeof s?.status === "string" ? s.status : undefined;
       const queries = Array.isArray(s?.queries) ? s.queries : [];
       const results = Array.isArray(s?.results) ? s.results : [];
-      const answer = typeof s?.answer === "string" ? s.answer : undefined;
-      return { key: id, id, title, status, queries, results, answer };
+      const answers = Array.isArray(s?.answers) ? s.answers : (typeof s?.answer === "string" ? [s.answer] : []);
+      const error = typeof s?.error === "object" ? s.error : undefined;
+      return { key: id, id, title, status, queries, results, answers, error };
     });
   }, [steps]);
 
@@ -585,6 +587,7 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
   const [open, setOpen] = React.useState<boolean>(!!isActive);
   React.useEffect(() => setOpen(!!isActive), [isActive]);
   const Pill = () => {
+    if (step?.error) return (<div className="h-5 w-5 rounded-full bg-red-500 text-white grid place-items-center shrink-0"><span className="text-[10px] font-bold">!</span></div>);
     if (status === 'completed') return (<div className="h-5 w-5 rounded-full bg-emerald-500 text-white grid place-items-center shrink-0"><CheckIcon className="h-3.5 w-3.5" /></div>);
     if (status === 'executing') return (<div className="h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center shrink-0"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>);
     return (<div className="h-5 w-5 rounded-full border border-muted-foreground/40 bg-background shrink-0" />);
@@ -608,6 +611,14 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
 
   const Body = (
     <div className="px-2 pb-2 space-y-2">
+          {step?.error ? (
+            <div className="text-xs text-red-600 whitespace-pre-wrap border rounded-md p-2 bg-red-50">
+              {typeof step.error?.message === 'string' ? step.error.message : 'This step failed.'}
+              {Array.isArray(step.error?.codes) && step.error.codes.length > 0 && (
+                <div className="mt-1 text-[11px] opacity-80">codes: {step.error.codes.slice(0,3).join(', ')}</div>
+              )}
+            </div>
+          ) : null}
           {Array.isArray(step.queries) && step.queries.length > 0 && (
             <div className="-mx-2 px-2 overflow-x-auto">
               <div className="flex items-center gap-2 py-1 w-max">
@@ -629,9 +640,9 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
               </div>
             </div>
           )}
-          {typeof step.answer === 'string' && step.answer.length > 0 && (
-            <div className="mt-1 text-xs text-muted-foreground border rounded-md p-2">
-              {step.answer}
+          {Array.isArray(step.answers) && step.answers.length > 0 && (
+            <div className="mt-1 text-xs text-muted-foreground border rounded-md p-2 whitespace-pre-wrap">
+              {step.answers.slice(0,3).join(" \n")}
             </div>
           )}
     </div>

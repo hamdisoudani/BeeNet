@@ -15,6 +15,14 @@ class PlanStep(BaseModel):
     queries: List[str] = Field(default_factory=list)
     results: List[SearchResult] = Field(default_factory=list)
     status: Literal["pending", "executing", "completed"] = "pending"
+    # Optional research controls for Tavily
+    include_domains: List[str] = Field(default_factory=list)
+    exclude_domains: List[str] = Field(default_factory=list)
+    days: Optional[int] = None  # freshness window in days
+    max_results: Optional[int] = None
+    search_depth: Optional[Literal["basic", "advanced"]] = None
+    # Optional per-query short answers
+    answers: Optional[List[str]] = None
 
 
 class ResearchPlan(BaseModel):

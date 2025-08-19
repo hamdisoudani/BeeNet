@@ -6,6 +6,7 @@ import time
 import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 
 from langchain_core.runnables import RunnableConfig
 
@@ -44,7 +45,7 @@ def _favicon_for_url_from_result(item: dict[str, Any]) -> str | None:
         return None
 
 
-async def _search_query_via_tool(query: str, max_results: int = 5) -> Dict[str, Any]:
+async def _search_query_via_tool(query: str, max_results: int = 5, *, include_domains: list[str] | None = None, exclude_domains: list[str] | None = None, days: int | None = None, search_depth: str | None = None) -> Dict[str, Any]:
     """Invoke the Tavily web search tool manually (no LLM) with basic caching."""
     try:
         # Check cache (short TTL to avoid stale data)
@@ -58,13 +59,19 @@ async def _search_query_via_tool(query: str, max_results: int = 5) -> Dict[str, 
                 return dict(cached)
 
         # Tools are sync; run off the event loop
+        ctx = copy_context()
         def _call_tool():
             try:
-                return tavily_search.invoke({"query": query, "max_results": max_results})
+                payload: Dict[str, Any] = {"query": query, "max_results": max_results}
+                if include_domains: payload["include_domains"] = include_domains
+                if exclude_domains: payload["exclude_domains"] = exclude_domains
+                if isinstance(days, int): payload["days"] = days
+                if search_depth in ("basic", "advanced"): payload["search_depth"] = search_depth
+                return ctx.run(lambda: tavily_search.invoke(payload))
             except Exception:
                 # Fallback to underlying function if available
                 try:
-                    return tavily_search.func(query=query, max_results=max_results)  # type: ignore[attr-defined]
+                    return ctx.run(lambda: tavily_search.func(query=query, max_results=max_results))  # type: ignore[attr-defined]
                 except Exception:
                     return {"answer": None, "results": []}
 
@@ -165,6 +172,11 @@ async def research_node(
         pass
 
     queries: List[str] = list(step.get("queries") or [])[:5]
+    include_domains = step.get("include_domains") if isinstance(step.get("include_domains"), list) else None
+    exclude_domains = step.get("exclude_domains") if isinstance(step.get("exclude_domains"), list) else None
+    days = step.get("days") if isinstance(step.get("days"), int) else None
+    search_depth = step.get("search_depth") if isinstance(step.get("search_depth"), str) else None
+    max_results_override = step.get("max_results") if isinstance(step.get("max_results"), int) else None
     if not queries:
         logger.info("Research: missing client or queries; completing step with no results")
         step["status"] = "completed"
@@ -182,7 +194,17 @@ async def research_node(
         # Enforce per-query timeout and return normalized payload including original query
         timeout_s = float(os.getenv("TAVILY_QUERY_TIMEOUT_SECONDS", "12"))
         try:
-            payload = await asyncio.wait_for(_search_query_via_tool(q, max_results=5), timeout=timeout_s)
+            payload = await asyncio.wait_for(
+                _search_query_via_tool(
+                    q,
+                    max_results=(max_results_override or 5),
+                    include_domains=include_domains,
+                    exclude_domains=exclude_domains,
+                    days=days,
+                    search_depth=search_depth,
+                ),
+                timeout=timeout_s,
+            )
         except asyncio.TimeoutError:
             payload = {"answer": None, "results": [], "error": "timeout"}
 
@@ -221,7 +243,10 @@ async def research_node(
     error_codes: List[str] = []
     first_iteration = True
     for task in asyncio.as_completed(tasks):
-        one = await task
+        try:
+            one = await task
+        except Exception:
+            one = {"results": [], "error": "task_failed"}
         try:
             existing = step.get("results") or []
             if not isinstance(existing, list):
@@ -250,14 +275,27 @@ async def research_node(
             if isinstance(one.get("error"), str):
                 has_error = True
                 error_codes.append(str(one["error"]))
-                if first_iteration:
-                    try:
-                        err = {"type": "tavily_error", "message": "Web search failed to start.", "codes": error_codes[:1]}
-                        state["error"] = err  # type: ignore[index]
-                        await copilotkit_emit_state(config, state)
-                    except Exception:
-                        pass
-                    return {"plan": plan.model_dump(), "error": err}
+                # Fail fast: cancel remaining tasks, mark step completed with error, emit, and return
+                try:
+                    for t in tasks:
+                        if not t.done():
+                            t.cancel()
+                except Exception:
+                    pass
+                step["error"] = {
+                    "type": "tavily_error",
+                    "codes": error_codes[:3],
+                    "message": "Search failed for this step.",
+                }
+                step["status"] = "completed"
+                normalized_steps[step_idx] = step
+                plan.steps = normalized_steps  # type: ignore[assignment]
+                try:
+                    state["plan"] = plan.model_dump()  # type: ignore[index]
+                    await copilotkit_emit_state(config, state)
+                except Exception:
+                    pass
+                return {"plan": plan.model_dump()}
             normalized_steps[step_idx] = step
             plan.steps = normalized_steps  # type: ignore[assignment]
             state["plan"] = plan.model_dump()  # type: ignore[index]
@@ -266,22 +304,14 @@ async def research_node(
             pass
         first_iteration = False
 
-    # Mark completed and emit; set top-level error for UI if any
+    # Mark completed and emit; keep error only on the step (not top-level state)
     step["status"] = "completed"
     if has_error:
-        # Attach a compact error summary for the UI
         step["error"] = {
             "type": "tavily_error",
             "codes": error_codes[:3],
+            "message": "Search failed for this step.",
         }
-        try:
-            state["error"] = {  # type: ignore[index]
-                "type": "tavily_error",
-                "message": "Some searches failed. Results may be incomplete.",
-                "codes": error_codes[:3],
-            }
-        except Exception:
-            pass
     normalized_steps[step_idx] = step
     plan.steps = normalized_steps  # type: ignore[assignment]
     try:

@@ -6,9 +6,11 @@ import { UserSecrets, UserSecretsSchema } from '../secrets/schemas/user-secrets.
 import { AppLogger } from '../common/logger.service';
 import { Conversation, ConversationSchema } from '../messages/schemas/conversation.schema';
 import { Message, MessageSchema } from '../messages/schemas/message.schema';
+import { SecretsModule } from '../secrets/secrets.module';
 
 @Module({
   imports: [
+    SecretsModule,
     MongooseModule.forFeature([
       { name: UserSecrets.name, schema: UserSecretsSchema },
       { name: Conversation.name, schema: ConversationSchema },

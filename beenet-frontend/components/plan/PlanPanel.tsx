@@ -4,7 +4,14 @@ import { useCoAgent } from "@copilotkit/react-core";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-type Step = { id: string; title: string; status?: "pending" | "executing" | "completed" };
+type Step = {
+  id: string;
+  title: string;
+  status?: "pending" | "executing" | "completed";
+  results?: Array<{ title?: string | null; url?: string | null; score?: number | null }>;
+  answers?: string[];
+  error?: { type?: string; message?: string; codes?: string[] } | null;
+};
 
 export default function PlanPanel() {
   const { state } = useCoAgent<any>({ name: "starterAgent" });
@@ -33,17 +40,43 @@ export default function PlanPanel() {
       </CardHeader>
       <CardContent>
         <ol className="space-y-2">
-          {steps.map((s) => (
-            <li key={s.id} className="flex items-start justify-between gap-3 text-sm">
-              <span className="text-foreground/90">{s.title}</span>
-              <Badge
-                variant={s.status === "completed" ? "secondary" : s.status === "executing" ? "default" : "outline"}
-                className="shrink-0 text-[10px]"
-              >
-                {s.status || "pending"}
-              </Badge>
-            </li>
-          ))}
+          {steps.map((s) => {
+            const isDone = s.status === "completed";
+            const hasErr = !!s.error;
+            return (
+              <li key={s.id} className="space-y-1">
+                <div className="flex items-start justify-between gap-3 text-sm">
+                  <span className="text-foreground/90">{s.title}</span>
+                  <Badge
+                    variant={hasErr ? "destructive" as any : isDone ? "secondary" : s.status === "executing" ? "default" : "outline"}
+                    className="shrink-0 text-[10px]"
+                  >
+                    {hasErr ? "error" : (s.status || "pending")}
+                  </Badge>
+                </div>
+                {hasErr ? (
+                  <div className="text-xs text-red-500/90 whitespace-pre-wrap">{s.error?.message || "This step failed."}</div>
+                ) : (
+                  <div className="pl-4 text-xs space-y-1">
+                    {Array.isArray(s.answers) && s.answers.length > 0 && (
+                      <div className="text-foreground/80">Quick findings: {s.answers.slice(0, 3).join(" \n")}</div>
+                    )}
+                    {Array.isArray(s.results) && s.results.length > 0 && (
+                      <ul className="list-disc ml-4">
+                        {s.results.slice(0, 3).map((r, i) => (
+                          <li key={i} className="truncate">
+                            <a href={r.url || undefined} target="_blank" rel="noreferrer" className="underline">
+                              {r.title || r.url}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
           {steps.length === 0 && (
             <div className="text-xs text-muted-foreground">No steps.</div>
           )}

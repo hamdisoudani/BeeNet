@@ -59,11 +59,23 @@ export class ProxyService {
     rawState: any;
   }): Promise<void> {
     const { userId, conversationId, threadId, turnId, agentName, rawState } = params;
-    // Save only plan in state
-    let planOnly: any = undefined;
+    // Save a compact state: plan plus an optional sanitized error
+    let compact: any = undefined;
     try {
       const p = rawState?.plan;
-      if (p && typeof p === 'object') planOnly = { plan: { mode: p.mode, steps: p.steps, reason: p.reason } };
+      const plan = p && typeof p === 'object' ? { mode: p.mode, steps: p.steps, reason: p.reason } : undefined;
+      let err: any = undefined;
+      try {
+        const e = rawState?.error;
+        if (e && typeof e === 'object') {
+          // Keep only user-safe fields
+          const type = typeof e.type === 'string' ? e.type : undefined;
+          const message = typeof e.message === 'string' ? e.message : undefined;
+          const codes = Array.isArray(e.codes) ? e.codes.slice(0, 3).map((x: any) => String(x)) : undefined;
+          if (type || message || codes) err = { ...(type ? { type } : {}), ...(message ? { message } : {}), ...(codes ? { codes } : {}) };
+        }
+      } catch {}
+      if (plan || err) compact = { ...(plan ? { plan } : {}), ...(err ? { error: err } : {}) };
     } catch {}
     await this.msgs.create({
       userId,
@@ -72,7 +84,7 @@ export class ProxyService {
       turnId,
       role: 'assistant',
       agentName,
-      state: planOnly,
+      state: compact,
     });
   }
 

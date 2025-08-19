@@ -41,6 +41,10 @@ class ProxyAuthAndModelMiddleware(BaseHTTPMiddleware):
             model_api_key_var.set(_safe_header(request, "x-openai-api-key"))
             model_name_var.set(_safe_header(request, "x-openai-model"))
             tavily_key_var.set(_safe_header(request, "x-tavily-api-key"))
+            print("tavily_key_var", tavily_key_var.get())
+            print("model_base_url_var", model_base_url_var.get())
+            print("model_api_key_var", model_api_key_var.get())
+            print("model_name_var", model_name_var.get())
             # Safe diagnostic log (no secrets)
             base_url = model_base_url_var.get()
             base_host = None

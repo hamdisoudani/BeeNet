@@ -6,12 +6,14 @@ import { AppLogger } from '../common/logger.service';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { Types } from 'mongoose';
 import { ProxyService } from './proxy.service';
+import { SecretsService } from '../secrets/secrets.service';
 
 @Controller()
 export class ProxyController {
   constructor(
     private logger: AppLogger,
     private svc: ProxyService,
+    private secrets: SecretsService,
   ) {
     this.logger.setContext('ProxyController');
   }
@@ -95,24 +97,22 @@ export class ProxyController {
     try {
       if (authUserId) {
         const s = await this.svc.getUserSecrets(authUserId);
-        if (s) {
-          if ((s as any).tavilyApiKey) headers['x-tavily-api-key'] = String((s as any).tavilyApiKey);
+        try {
+          const tav = await this.secrets.resolveTavilyKeyForUser(authUserId);
+          if (tav) headers['x-tavily-api-key'] = String(tav);
+        } catch {}
 
-          // New multi-model support via x-model-id header from frontend
-          try {
-            const requestedModelId = (req.headers['x-model-id'] as string) || undefined;
-            const list: any[] = Array.isArray((s as any).models) ? (s as any).models : [];
-            if (requestedModelId && list.length > 0) {
-              const chosen = list.find((m) => m && m.id === requestedModelId);
-              if (chosen) {
-                if (chosen.baseUrl) headers['x-openai-base-url'] = String(chosen.baseUrl);
-                if (chosen.model) headers['x-openai-model'] = String(chosen.model);
-                if (chosen.apiKey) headers['x-openai-api-key'] = String(chosen.apiKey);
-                if (chosen.provider) headers['x-model-provider'] = String(chosen.provider);
-              }
-            }
-          } catch {}
-        }
+        // Determine which model to use: explicit x-model-id header or user's default
+        const requestedModelId = (req.headers['x-model-id'] as string) || undefined;
+        try {
+          const resolved = await this.secrets.resolveModelForUser(authUserId, requestedModelId);
+          if (resolved) {
+            if ((resolved as any).baseUrl) headers['x-openai-base-url'] = String((resolved as any).baseUrl);
+            if ((resolved as any).model) headers['x-openai-model'] = String((resolved as any).model);
+            if ((resolved as any).apiKey) headers['x-openai-api-key'] = String((resolved as any).apiKey);
+            if ((resolved as any).provider) headers['x-model-provider'] = String((resolved as any).provider);
+          }
+        } catch {}
       }
     } catch {}
 

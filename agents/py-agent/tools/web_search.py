@@ -7,7 +7,14 @@ from brain.context import get_tavily_api_key
 
 
 @tool
-def tavily_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+def tavily_search(
+    query: str,
+    max_results: int = 5,
+    include_domains: List[str] | None = None,
+    exclude_domains: List[str] | None = None,
+    days: int | None = None,
+    search_depth: str | None = None,
+) -> Dict[str, Any]:
     """
     Search the web using Tavily and return a dict with:
     - answer: concise LLM-generated answer (if available)
@@ -33,12 +40,21 @@ def tavily_search(query: str, max_results: int = 5) -> Dict[str, Any]:
             return {"answer": None, "results": [], "error": "tavily_missing_key"}
         client = TavilyClient(api_key=api_key)
         logger.info("Tavily search: max_results=%d", safe_max)
-        raw = client.search(
-            query=safe_query,
-            max_results=safe_max,
-            include_answer=True,
-            include_favicon=True,
-        )
+        kwargs: Dict[str, Any] = {
+            "query": safe_query,
+            "max_results": safe_max,
+            "include_answer": True,
+            "include_favicon": True,
+        }
+        if isinstance(include_domains, list) and include_domains:
+            kwargs["include_domains"] = [str(d) for d in include_domains[:6]]
+        if isinstance(exclude_domains, list) and exclude_domains:
+            kwargs["exclude_domains"] = [str(d) for d in exclude_domains[:6]]
+        if isinstance(days, int) and days > 0:
+            kwargs["days"] = min(max(days, 1), 3650)
+        if isinstance(search_depth, str) and search_depth in ("basic", "advanced"):
+            kwargs["search_depth"] = search_depth
+        raw = client.search(**kwargs)
         # Expected shape is a dict with a 'results' list; handle other shapes defensively
         normalized: List[Dict[str, Any]] = []
         answer_val = None

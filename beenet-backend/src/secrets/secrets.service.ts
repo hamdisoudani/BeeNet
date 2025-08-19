@@ -98,6 +98,16 @@ export class SecretsService {
 
     // Return safe models (omit apiKey) from updated doc with subdoc _ids
     const arrNow: any[] = Array.isArray((updated as any)?.models) ? (updated as any).models : [];
+    // Backfill missing _id on legacy array entries if any
+    try {
+      const missing = arrNow.filter((m: any) => !m?._id);
+      if (missing.length > 0) {
+        const withIds = arrNow.map((m: any) => (m?._id ? m : { ...m, _id: new (require('mongoose').Types.ObjectId)() }));
+        await this.model.updateOne({ userId }, { $set: { models: withIds } });
+        const fresh = await this.model.findOne({ userId }).lean();
+        (updated as any).models = Array.isArray((fresh as any)?.models) ? (fresh as any).models : arrNow;
+      }
+    } catch {}
     const safe = arrNow.map((m: any) => ({ id: String(m._id), name: m.name, provider: m.provider, baseUrl: m.baseUrl, model: m.model }));
     if (normalized.length === 0 && failures.length > 0) {
       // Return the first failure reason to surface a helpful error in the UI
@@ -226,6 +236,29 @@ export class SecretsService {
     await this.model.updateOne({ userId }, { $unset: { tavilyApiKey: 1, tavilyApiKeyEnc: 1 } });
     await this.cache.del(`user_secrets:${userId}`);
     return { ok: true } as const;
+  }
+
+  async resolveTavilyKeyForUser(userId: string): Promise<string | undefined> {
+    try {
+      const cacheKey = `user_secrets:${userId}`;
+      let doc: any = await this.cache.get(cacheKey);
+      if (!doc) {
+        doc = await this.model.findOne({ userId }).lean();
+        if (doc) await this.cache.set(cacheKey, doc, 60_000);
+      }
+      if (!doc) return undefined;
+      if ((doc as any).tavilyApiKey && typeof (doc as any).tavilyApiKey === 'string') {
+        return String((doc as any).tavilyApiKey);
+      }
+      const enc = (doc as any)?.tavilyApiKeyEnc;
+      if (enc) {
+        const v = this.decryptSecret(enc);
+        return v || undefined;
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private getDataKey(): Buffer {

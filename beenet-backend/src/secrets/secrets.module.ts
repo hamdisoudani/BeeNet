@@ -8,6 +8,7 @@ import { UserSecrets, UserSecretsSchema } from './schemas/user-secrets.schema';
   imports: [MongooseModule.forFeature([{ name: UserSecrets.name, schema: UserSecretsSchema }])],
   controllers: [SecretsController],
   providers: [SecretsService],
+  exports: [SecretsService],
 })
 export class SecretsModule {}
 
