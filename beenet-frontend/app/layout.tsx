@@ -49,6 +49,7 @@ export default function RootLayout({
           <Toaster richColors />
         </Providers>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
