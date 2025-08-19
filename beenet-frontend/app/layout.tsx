@@ -7,8 +7,8 @@ import { ConversationsProvider } from "@/context/conversations";
 import SidebarAppShell from "@/components/SidebarAppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+//import { Analytics } from "@vercel/analytics/next";
+//import { SpeedInsights } from "@vercel/speed-insights/next";
 
 
 const geistSans = Geist({
@@ -48,8 +48,6 @@ export default function RootLayout({
           </SignedOut>
           <Toaster richColors />
         </Providers>
-        <Analytics />
-        <SpeedInsights />
       </body>
     </html>
   );
