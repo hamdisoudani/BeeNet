@@ -9,10 +9,6 @@ import {
 
 const serviceAdapter = new ExperimentalEmptyAdapter();
 
-export const config = {
-  runtime: "edge",
-};
-
 const runtime = new CopilotRuntime({
   remoteEndpoints: [
     // Uncomment this if you want to use LangGraph JS, make sure to
@@ -68,12 +64,9 @@ const runtime = new CopilotRuntime({
     },
   ],
   middleware: {
-    onAfterRequest(options) {
-      console.log("onAfterRequest from the middleware", options);
-    },
-    onBeforeRequest(options) {
-      console.log("onBeforeRequest from the middleware", options);
-    },
+    // Keep hooks available for future diagnostics; avoid logging request details in production
+    onAfterRequest() {},
+    onBeforeRequest() {},
   }
 });
 

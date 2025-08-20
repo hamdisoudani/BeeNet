@@ -289,12 +289,15 @@ export class ProxyController {
         // Set headers suitable for streaming
         res.status(upstream.status);
         upstream.headers.forEach((v: string, k: string) => {
-          // Avoid fixed content-length for streams
-          if (k.toLowerCase() === 'content-length') return;
+          const lower = k.toLowerCase();
+          // Avoid fixed/buffering headers for streams
+          if (lower === 'content-length' || lower === 'transfer-encoding' || lower === 'content-encoding') return;
           res.setHeader(k, v);
         });
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
         if (!res.getHeader('Content-Type')) {
           res.setHeader('Content-Type', 'text/event-stream');
         }
@@ -500,9 +503,13 @@ export class ProxyController {
     // Non-streaming endpoints (e.g., /info)
     try {
       const responseText = await upstream.text();
-      //this.logger.log({ event: 'agent_response', status: upstream.status, durationMs: Date.now() - started, bodyPreview: responseText.slice(0, 1000) });
       res.status(upstream.status);
-      upstream.headers.forEach((v: string, k: string) => res.setHeader(k, v));
+      // Forward headers but strip compression/transfer headers since body is already decoded by fetch()
+      upstream.headers.forEach((v: string, k: string) => {
+        const lower = k.toLowerCase();
+        if (lower === 'content-length' || lower === 'transfer-encoding' || lower === 'content-encoding') return;
+        res.setHeader(k, v);
+      });
       res.end(responseText);
     } catch (e) {
       this.logger.error({ event: 'response_read_failed', error: String(e) });

@@ -263,7 +263,6 @@ export class SecretsService {
 
   private getDataKey(): Buffer {
     let b64 = (process.env.DATA_KEY || '').trim();
-    console.log('DATA_KEY', b64);
     if (!b64) throw new Error('Missing DATA_KEY');
     if (b64.startsWith('base64:')) b64 = b64.slice(7);
     const raw = Buffer.from(b64, 'base64');
