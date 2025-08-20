@@ -7,6 +7,9 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import { useModelStore, type UserModel } from "@/stores/modelStore";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Trash2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type FormValues = {
@@ -32,7 +35,7 @@ const schema: yup.ObjectSchema<any> = yup.object({
 });
 
 export default function SettingsPage() {
-  const { models, defaultModelId, setModels, setActiveModelId } = useModelStore();
+  const { models, defaultModelId, setModels, setActiveModelId, setStatus, setStatusLoading, setStatusError } = useModelStore();
   const [submitting, setSubmitting] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -83,6 +86,14 @@ export default function SettingsPage() {
       reset();
       toast.success("Model saved and tested successfully");
       setOpen(false);
+      // Refresh global secrets status so banners/UI update immediately
+      try {
+        setStatusLoading(true); setStatusError(false);
+        const rs = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
+        const dj = await rs.json().catch(() => ({}));
+        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasTavilyKey)); else setStatusError(true);
+      } catch { setStatusError(true); }
+      finally { setStatusLoading(false); }
     } catch (e: any) {
       toast.error(e?.message || "Save failed");
     } finally {
@@ -148,9 +159,11 @@ export default function SettingsPage() {
                 <input className="w-full rounded-md border px-3 py-2" type="password" {...register("apiKey")} autoComplete="off" autoCorrect="off" spellCheck={false} />
                 {errors.apiKey && <p className="text-xs text-red-500 mt-1">{errors.apiKey.message}</p>}
               </div>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox" {...register("setAsDefault")} /> Set as default
-              </label>
+              {models.length > 0 && (
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" {...register("setAsDefault")} /> Set as default
+                </label>
+              )}
               <div className="flex items-center gap-2">
                 <button type="submit" disabled={submitting} className="rounded-md bg-foreground text-background px-3 py-2 text-sm disabled:opacity-50">{submitting ? "Saving…" : "Save"}</button>
               </div>
@@ -175,7 +188,7 @@ export default function SettingsPage() {
                 ))}
               </ul>
             ) : models.length === 0 ? (
-              <div className="text-sm text-muted-foreground p-6 text-center">No models yet. Click “Add model” to create one.</div>
+              <div className="text-sm text-muted-foreground p-6 text-center">No models yet. Click “Add model” to create one to use the BeeNet agent.</div>
             ) : (
               <ul className="space-y-2 p-2">
                 {models.map((m: UserModel) => {
@@ -196,7 +209,7 @@ export default function SettingsPage() {
                           {m.provider || "custom"} · {m.model} · {m.baseUrl}
                         </div>
                       </div>
-                      <div className="sm:ml-4">
+                      <div className="sm:ml-4 flex items-center gap-2">
                         <button
                           type="button"
                           className="rounded-md border px-2 py-1 text-xs disabled:opacity-50 w-full sm:w-auto"
@@ -231,6 +244,50 @@ export default function SettingsPage() {
                         >
                           {isDefault ? 'Using' : (updatingId === m.id ? 'Setting…' : 'Use')}
                         </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                              disabled={isDefault && models.length > 1}
+                              onClick={async () => {
+                                try {
+                                  setUpdatingId(m.id);
+                                  // If multiple models and this is default, block delete in UI (guarded server-side too)
+                                  if (isDefault && models.length > 1) return;
+                                  const res = await fetch('/api/secrets', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include',
+                                    body: JSON.stringify({ _path: '/model/delete', id: m.id }),
+                                  });
+                                  const payload = await res.json().catch(() => ({}));
+                                  if (!res.ok || payload?.ok === false) {
+                                    const code = payload?.message || `delete_failed_${res.status}`;
+                                    throw new Error(mapBackendError(code) || 'Failed to delete model');
+                                  }
+                                  // Re-fetch secrets to hydrate from backend truth
+                                  const r2 = await fetch('/api/secrets', { method: 'GET', credentials: 'include', cache: 'no-store' });
+                                  const data = await r2.json().catch(() => ({}));
+                                  const safe: UserModel[] = Array.isArray(data?.models) ? data.models : [];
+                                  const defId: string | undefined = typeof data?.defaultModelId === 'string' ? data.defaultModelId : undefined;
+                                  setModels(safe, defId);
+                                  toast.success('Model deleted');
+                                } catch (e: any) {
+                                  const msg = String(e?.message || 'Failed to delete model');
+                                  toast.error(msg);
+                                } finally {
+                                  setUpdatingId(null);
+                                }
+                              }}
+                            >
+                              <span className="inline-flex items-center gap-1"><Trash2 className="h-3.5 w-3.5" /> Delete</span>
+                            </button>
+                          </TooltipTrigger>
+                          {isDefault && models.length > 1 && (
+                            <TooltipContent>Set another default model to delete this one.</TooltipContent>
+                          )}
+                        </Tooltip>
                       </div>
                     </li>
                   );
@@ -283,6 +340,8 @@ function TavilySection() {
   const [hasKey, setHasKey] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(true);
   const [saving, setSaving] = React.useState<boolean>(false);
+  const { setStatus, setStatusLoading, setStatusError } = useModelStore();
+  const [editing, setEditing] = React.useState<boolean>(false);
 
   React.useEffect(() => {
     (async () => {
@@ -309,6 +368,14 @@ function TavilySection() {
       setHasKey(true);
       setApiKey("");
       toast.success('Tavily key validated and saved');
+      // Refresh global secrets status so banners/UI update immediately
+      try {
+        setStatusLoading(true); setStatusError(false);
+        const rs = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
+        const dj = await rs.json().catch(() => ({}));
+        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasTavilyKey)); else setStatusError(true);
+      } catch { setStatusError(true); }
+      finally { setStatusLoading(false); }
     } catch (e: any) {
       toast.error(e?.message || 'Save failed');
     } finally {
@@ -324,6 +391,14 @@ function TavilySection() {
       if (!r2.ok || d2?.ok === false) throw new Error('Failed to remove');
       setHasKey(false);
       toast.success('Tavily key removed');
+      // Refresh global secrets status so banners/UI update immediately
+      try {
+        setStatusLoading(true); setStatusError(false);
+        const rs = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
+        const dj = await rs.json().catch(() => ({}));
+        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasTavilyKey)); else setStatusError(true);
+      } catch { setStatusError(true); }
+      finally { setStatusLoading(false); }
     } catch (e: any) {
       toast.error(e?.message || 'Remove failed');
     } finally {
@@ -331,35 +406,56 @@ function TavilySection() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium">Tavily</h2>
+        <div className="space-y-2 max-w-lg">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-9 w-full" />
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-8 w-20" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-medium">Tavily</h2>
       <p className="text-xs text-muted-foreground">Provide your Tavily API key to enable web search. We will validate it before saving.</p>
-      <div className="flex gap-2 items-end max-w-lg">
-        <div className="flex-1">
-          <label className="text-sm">API Key</label>
-          <input
-            className="w-full rounded-md border px-3 py-2"
-            type="password"
-            placeholder="tvly-..."
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
+      {!loading && hasKey && !editing && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-emerald-500">Configured</span>
+          <button type="button" className="rounded-md border px-2 py-1 text-xs" onClick={() => setEditing(true)}>Update</button>
+          <button type="button" onClick={onRemove} disabled={saving} className="rounded-md border px-2 py-1 text-xs inline-flex items-center gap-1"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
         </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={onSave} disabled={saving || !apiKey.trim()} className="rounded-md bg-foreground text-background px-3 py-2 text-sm disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+      )}
+      {(!hasKey || editing) && (
+        <div className="flex gap-2 items-end max-w-lg">
+          <div className="flex-1">
+            <label className="text-sm">API Key</label>
+            <input
+              className="w-full rounded-md border px-3 py-2"
+              type="password"
+              placeholder="tvly-..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onSave} disabled={saving || !apiKey.trim()} className="rounded-md bg-foreground text-background px-3 py-2 text-sm disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+            {editing && <button type="button" className="rounded-md border px-3 py-2 text-sm" onClick={() => setEditing(false)}>Cancel</button>}
+          </div>
         </div>
-      </div>
-      <div className="text-xs text-muted-foreground">
-        Status: {loading ? 'Loading…' : hasKey ? 'Configured' : 'Not configured'}
-      </div>
-      {hasKey && (
-        <div>
-          <button type="button" onClick={onRemove} disabled={saving} className="rounded-md border px-3 py-2 text-xs">Remove key</button>
-        </div>
+      )}
+      {(!hasKey || editing) && (
+        <div className="text-xs text-muted-foreground">Status: {hasKey ? 'Configured' : 'Not configured'}</div>
       )}
     </div>
   );

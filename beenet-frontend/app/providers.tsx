@@ -20,16 +20,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 
 function StatusBootstrap() {
-  const { setStatus } = useModelStore();
+  const { setStatus, setStatusLoading, setStatusError } = useModelStore();
   React.useEffect(() => {
     (async () => {
       try {
+        setStatusLoading(true);
+        setStatusError(false);
         const res = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
         const data = await res.json().catch(() => ({}));
         if (res.ok) setStatus(Boolean(data?.hasModel), Boolean(data?.hasTavilyKey));
+        else setStatusError(true);
       } catch {}
+      finally { setStatusLoading(false); }
     })();
-  }, [setStatus]);
+  }, [setStatus, setStatusLoading, setStatusError]);
   return null;
 }
 

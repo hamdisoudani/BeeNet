@@ -34,6 +34,8 @@ export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 
 ConversationSchema.index({ userId: 1, updatedAt: -1 });
 ConversationSchema.index({ userId: 1, threadId: 1 }, { unique: true });
+// Efficient pagination: filter by user/status and sort by lastMessageAt desc, _id desc
+ConversationSchema.index({ userId: 1, status: 1, lastMessageAt: -1, _id: -1 });
 
 
 

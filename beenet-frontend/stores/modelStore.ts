@@ -16,9 +16,13 @@ type ModelStoreState = {
   activeModelId?: string;
   ready?: boolean;
   hasTavilyKey?: boolean;
+  statusLoading?: boolean;
+  statusError?: boolean;
   setModels: (models: UserModel[], defaultModelId?: string) => void;
   setActiveModelId: (id?: string) => void;
   setStatus: (ready: boolean, hasTavilyKey: boolean) => void;
+  setStatusLoading: (loading: boolean) => void;
+  setStatusError: (err: boolean) => void;
   clear: () => void;
 };
 
@@ -28,9 +32,13 @@ export const useModelStore = create<ModelStoreState>((set) => ({
   activeModelId: undefined,
   ready: undefined,
   hasTavilyKey: undefined,
+  statusLoading: true,
+  statusError: false,
   setModels: (models: UserModel[], defaultModelId?: string) => set(() => ({ models, defaultModelId })),
   setActiveModelId: (id?: string) => set(() => ({ activeModelId: id })),
   setStatus: (ready: boolean, hasTavilyKey: boolean) => set(() => ({ ready, hasTavilyKey })),
+  setStatusLoading: (loading: boolean) => set(() => ({ statusLoading: loading })),
+  setStatusError: (err: boolean) => set(() => ({ statusError: err })),
   clear: () => set({ models: [], defaultModelId: undefined, activeModelId: undefined }),
 }));
 

@@ -87,7 +87,8 @@ export class SecretsService {
 
     // Optionally set default to the most recently added model
     let defaultModelId: string | undefined = (updated as any)?.defaultModelId || (current as any)?.defaultModelId;
-    if (setDefaultForNew && normalized.length > 0) {
+    const hadNoModels = !Array.isArray(existingModels) || existingModels.length === 0;
+    if ((setDefaultForNew || hadNoModels) && normalized.length > 0) {
       const arrNow: any[] = Array.isArray((updated as any)?.models) ? (updated as any).models : [];
       const last = arrNow[arrNow.length - 1];
       if (last && last._id) {
@@ -189,6 +190,29 @@ export class SecretsService {
     await this.model.updateOne({ userId }, { $set: { defaultModelId: String(modelId) } });
     await this.cache.del(`user_secrets:${userId}`);
     return { ok: true, defaultModelId: String(modelId) } as const;
+  }
+
+  async deleteModelForUser(userId: string, modelId: string) {
+    const doc: any = await this.model.findOne({ userId }).lean();
+    if (!doc) return { ok: false, message: 'not_found' } as const;
+    const arr: any[] = Array.isArray(doc.models) ? doc.models : [];
+    const idx = arr.findIndex((m: any) => m && String(m._id || m.id) === String(modelId));
+    if (idx < 0) return { ok: false, message: 'model_not_found' } as const;
+    const isDefault = String(doc.defaultModelId || '') === String(modelId);
+    const total = arr.length;
+    if (isDefault && total > 1) {
+      return { ok: false, message: 'cannot_delete_default' } as const;
+    }
+    // Remove the model subdocument
+    await this.model.updateOne({ userId }, { $pull: { models: { _id: arr[idx]._id } } });
+    // If this was the only model, unset default
+    if (total === 1) {
+      await this.model.updateOne({ userId }, { $unset: { defaultModelId: 1 } });
+    } else {
+      // Non-default deletions keep current defaultModelId
+    }
+    await this.cache.del(`user_secrets:${userId}`);
+    return { ok: true } as const;
   }
 
   async validateTavilyKey(apiKey: string): Promise<{ ok: boolean; info?: any; message?: string; }>{

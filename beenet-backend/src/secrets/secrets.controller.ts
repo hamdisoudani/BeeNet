@@ -100,6 +100,19 @@ export class SecretsController {
     }
   }
 
+  @Post('model/delete')
+  @Throttle({ default: { limit: 5, ttl: 60 } })
+  async deleteModel(@Req() req: any, @Body() body: { id?: string }) {
+    try {
+      const userId = req.auth.userId as string;
+      const id = typeof body?.id === 'string' ? String(body.id) : '';
+      if (!id) return { ok: false, message: 'invalid_id' } as const;
+      return await this.svc.deleteModelForUser(userId, id);
+    } catch {
+      return { ok: false } as const;
+    }
+  }
+
   @Put('tavily')
   @Throttle({ default: { limit: 5, ttl: 60 } })
   async upsertTavily(@Req() req: any, @Body() body: { apiKey?: string }) {

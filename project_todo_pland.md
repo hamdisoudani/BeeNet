@@ -304,6 +304,25 @@ Notes:
   - Removed custom thread propagation; CopilotKit owns thread scoping.
 
 
+### Hotfix — Proxy streaming and /info (08-20-2025)
+
+- Fixed CopilotKit /info network error via proxy header normalization
+  - Non‑streaming responses: strip `content-encoding`, `content-length`, and `transfer-encoding` before forwarding since the body is already decoded by fetch().
+  - Streaming endpoints `/copilotkit/agents/(state|execute)`: strip the same buffering headers and set:
+    - `Content-Type: text/event-stream` (if missing)
+    - `Connection: keep-alive`
+    - `Cache-Control: no-cache, no-transform`
+    - `X-Accel-Buffering: no`
+  - Result: frontend now receives proper responses for `/info` and live SSE without client-side decode mismatches.
+- No functional changes to the Python agent (planner fallback was proposed but not merged).
+- Minor noise reductions (non-functional):
+  - Frontend Next runtime route (`app/api/copilotkit/route.ts`): silenced verbose request logs.
+  - Backend secrets service: removed stray `DATA_KEY` console log.
+
+Verification:
+- Observed `200 OK` from Render agent for `/copilotkit/info` and successful streaming for `/agents/execute` in local proxy logs.
+- Frontend no longer surfaces CopilotKit NETWORK_ERROR for `/api/copilotkit/info`.
+
 ### Agent Error Handling & Plan Streaming (08-18-2025)
 
 - Standardized, typed error surface in `AgentState.error` (and mirrored into `plan.error` where helpful).

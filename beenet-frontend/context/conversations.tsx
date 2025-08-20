@@ -14,7 +14,9 @@ type ConversationsContextType = {
   conversations: Conversation[];
   loading: boolean;
   refresh: () => Promise<void>;
+  loadMore: () => Promise<void>;
   addOrPrepend: (c: Conversation) => void;
+  removeByThreadId: (threadId: string) => void;
 };
 
 const ConversationsContext = React.createContext<ConversationsContextType | null>(null);
@@ -28,20 +30,43 @@ export function useConversations() {
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] = React.useState<Conversation[]>([]);
   const [loading, setLoading] = React.useState<boolean>(false);
+  const [nextCursor, setNextCursor] = React.useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = React.useState<boolean>(true);
 
   const refresh = React.useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/conversations", { method: "GET", credentials: "include", cache: "no-store" });
+      const res = await fetch(`/api/conversations?limit=20`, { method: "GET", credentials: "include", cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       const list: Conversation[] = Array.isArray(data?.conversations) ? data.conversations : [];
       setConversations(list);
+      setNextCursor(typeof data?.nextCursor === "string" ? data.nextCursor : undefined);
+      setHasMore(Boolean(data?.hasMore));
     } catch {
       setConversations([]);
+      setNextCursor(undefined);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const loadMore = React.useCallback(async () => {
+    if (!hasMore || !nextCursor || loading) return;
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/conversations?cursor=${encodeURIComponent(nextCursor)}&limit=20`, { method: "GET", credentials: "include", cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      const list: Conversation[] = Array.isArray(data?.conversations) ? data.conversations : [];
+      setConversations((prev) => [...prev, ...list]);
+      setNextCursor(typeof data?.nextCursor === "string" ? data.nextCursor : undefined);
+      setHasMore(Boolean(data?.hasMore));
+    } catch {
+      // keep existing
+    } finally {
+      setLoading(false);
+    }
+  }, [hasMore, nextCursor, loading]);
 
   React.useEffect(() => {
     void refresh();
@@ -55,7 +80,11 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     });
   }, []);
 
-  const value = React.useMemo(() => ({ conversations, loading, refresh, addOrPrepend }), [conversations, loading, refresh, addOrPrepend]);
+  const removeByThreadId = React.useCallback((threadId: string) => {
+    setConversations((prev) => prev.filter((x) => x.threadId !== threadId));
+  }, []);
+
+  const value = React.useMemo(() => ({ conversations, loading, refresh, loadMore, addOrPrepend, removeByThreadId }), [conversations, loading, refresh, loadMore, addOrPrepend, removeByThreadId]);
 
   return <ConversationsContext.Provider value={value}>{children}</ConversationsContext.Provider>;
 }
