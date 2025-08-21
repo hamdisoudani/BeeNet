@@ -24,8 +24,8 @@ export class SecretsController {
       const data: any = await this.svc.getForUser(userId);
       const models = Array.isArray(data?.models) ? data.models : [];
       const hasModel = models.length > 0;
-      const hasTavilyKey = Boolean(data?.hasTavilyKey);
-      return { ok: true, hasModel, hasTavilyKey, defaultModelId: data?.defaultModelId };
+      const hasSerperKey = Boolean(data?.hasSerperKey);
+      return { ok: true, hasModel, hasSerperKey, defaultModelId: data?.defaultModelId };
     } catch {
       return { ok: false } as const;
     }
@@ -113,41 +113,47 @@ export class SecretsController {
     }
   }
 
-  @Put('tavily')
+  
+
+  @Put('serper')
   @Throttle({ default: { limit: 5, ttl: 60 } })
-  async upsertTavily(@Req() req: any, @Body() body: { apiKey?: string }) {
+  async upsertSerper(@Req() req: any, @Body() body: { apiKey?: string }) {
     try {
       const userId = req.auth.userId as string;
       const apiKey = typeof body?.apiKey === 'string' ? String(body.apiKey) : '';
       if (!apiKey) return { ok: false, message: 'invalid_api_key' } as const;
-      return await this.svc.setTavilyKeyForUser(userId, apiKey);
+      return await this.svc.setSerperKeyForUser(userId, apiKey);
     } catch {
       return { ok: false } as const;
     }
   }
 
-  @Post('tavily/test')
+  @Post('serper/test')
   @Throttle({ default: { limit: 10, ttl: 60 } })
-  async testTavily(@Req() req: any, @Body() body: { apiKey?: string }) {
+  async testSerper(@Req() req: any, @Body() body: { apiKey?: string }) {
     try {
       const apiKey = typeof body?.apiKey === 'string' ? String(body.apiKey) : '';
       if (!apiKey) return { ok: false, message: 'invalid_api_key' } as const;
-      return await this.svc.validateTavilyKey(apiKey);
+      return await this.svc.validateSerperKey(apiKey);
     } catch {
       return { ok: false } as const;
     }
   }
 
-  @Post('tavily/remove')
+  @Post('serper/remove')
   @Throttle({ default: { limit: 5, ttl: 60 } })
-  async removeTavily(@Req() req: any) {
+  async removeSerper(@Req() req: any) {
     try {
       const userId = req.auth.userId as string;
-      return await this.svc.removeTavilyKeyForUser(userId);
+      return await this.svc.removeSerperKeyForUser(userId);
     } catch {
       return { ok: false } as const;
     }
   }
+
+  
+
+  
 }
 
 

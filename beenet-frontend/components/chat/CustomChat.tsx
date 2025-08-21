@@ -29,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useCoAgent, useCoAgentStateRender } from "@copilotkit/react-core";
+import type { AgentStateTS, ResearchPlanTS, PlanStepTS } from "@/types/agent";
 import { useModelStore } from "@/stores/modelStore";
 import type { InputProps } from "@copilotkit/react-ui";
 
@@ -41,19 +42,20 @@ import { toast } from "sonner";
 
 export default function CustomChat() {
   // Access co-agent state and runtime info for UI signals
-  const { state, setState, running, nodeName } = useCoAgent({
+  const { state, setState, running, nodeName } = useCoAgent<AgentStateTS>({
     name: "starterAgent",
     initialState: {
-        plan: [],
-        error: undefined
+        plan: { mode: "direct", steps: [] } as unknown as ResearchPlanTS,
+        error: undefined,
+        evidence: [],
     }
   });
   // Stream agent state into the chat as inline generative UI (e.g., plan)
-  useCoAgentStateRender<any>({
+  useCoAgentStateRender<AgentStateTS>({
     name: "starterAgent",
     render: ({ state }) => {
-      const plan = (state as any)?.plan;
-      const err = (state as any)?.error || (plan && (plan as any).error);
+      const plan = state?.plan as ResearchPlanTS | undefined;
+      const err = state?.error || (plan && (plan as any).error);
       if (err && typeof err === "object" && typeof err.message === "string" && err.message.trim()) {
         return <ErrorBanner error={err} />;
       }
@@ -63,7 +65,7 @@ export default function CustomChat() {
   });
 
   const resetPlanInTheState = () => {
-    setState({ plan: [], error: undefined });
+    setState({ plan: { mode: "direct", steps: [] } as unknown as ResearchPlanTS, error: undefined, evidence: [] });
   }
 
 
@@ -397,7 +399,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function InlinePlan({ plan, running, nodeName }: { plan: any; running?: boolean; nodeName?: string }) {
+function InlinePlan({ plan, running, nodeName }: { plan: ResearchPlanTS; running?: boolean; nodeName?: string }) {
   const isDirect = plan?.mode === "direct";
   
   // Early return BEFORE any hooks are called
@@ -437,7 +439,7 @@ function ErrorBanner({ error }: { error: any }) {
   }
 }
 
-function DirectPlan({ plan, running }: { plan: any; running?: boolean }) {
+function DirectPlan({ plan, running }: { plan: ResearchPlanTS; running?: boolean }) {
   const reason = (typeof plan?.reason === "string" && plan.reason.trim().length > 0)
     ? String(plan.reason)
     : "Direct response";
@@ -487,7 +489,7 @@ function DirectPlan({ plan, running }: { plan: any; running?: boolean }) {
   );
 }
 
-function SearchPlan({ plan, running }: { plan: any; running?: boolean }) {
+function SearchPlan({ plan, running }: { plan: ResearchPlanTS; running?: boolean }) {
   const steps = Array.isArray(plan?.steps) ? plan.steps : [];
   
   // Early return if no steps
@@ -505,7 +507,6 @@ function SearchPlan({ plan, running }: { plan: any; running?: boolean }) {
           status: undefined, 
           queries: [], 
           results: [], 
-          answers: [],
           error: undefined 
         };
       }
@@ -514,15 +515,16 @@ function SearchPlan({ plan, running }: { plan: any; running?: boolean }) {
       const status = typeof s?.status === "string" ? s.status : undefined;
       const queries = Array.isArray(s?.queries) ? s.queries : [];
       const results = Array.isArray(s?.results) ? s.results : [];
-      const answers = Array.isArray(s?.answers) ? s.answers : (typeof s?.answer === "string" ? [s.answer] : []);
       const error = typeof s?.error === "object" ? s.error : undefined;
-      return { key: id, id, title, status, queries, results, answers, error };
+      return { key: id, id, title, status, queries, results, error };
     });
   }, [steps]);
 
   const activeIndex = React.useMemo(() => {
-    const execIdx = normalized.findIndex((s: any) => s.status === "executing");
-    if (execIdx >= 0) return execIdx;
+    const readingIdx = normalized.findIndex((s: any) => s.status === "reading");
+    if (readingIdx >= 0) return readingIdx;
+    const searchingIdx = normalized.findIndex((s: any) => s.status === "searching");
+    if (searchingIdx >= 0) return searchingIdx;
     const pendIdx = normalized.findIndex((s: any) => !s.status || s.status === "pending");
     return pendIdx >= 0 ? pendIdx : -1;
   }, [normalized]);
@@ -566,7 +568,7 @@ function SearchPlan({ plan, running }: { plan: any; running?: boolean }) {
           <ul className="flex flex-col gap-2">
             {normalized.map((s: any, idx: number) => (
               <StepCard 
-                key={s.key} 
+                key={`${s.key}-${idx}`} 
                 step={s} 
                 isActive={idx === activeIndex} 
                 collapsible={true}
@@ -589,7 +591,7 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
   const Pill = () => {
     if (step?.error) return (<div className="h-5 w-5 rounded-full bg-red-500 text-white grid place-items-center shrink-0"><span className="text-[10px] font-bold">!</span></div>);
     if (status === 'completed') return (<div className="h-5 w-5 rounded-full bg-emerald-500 text-white grid place-items-center shrink-0"><CheckIcon className="h-3.5 w-3.5" /></div>);
-    if (status === 'executing') return (<div className="h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center shrink-0"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>);
+    if (status === 'reading' || status === 'searching') return (<div className="h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center shrink-0"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>);
     return (<div className="h-5 w-5 rounded-full border border-muted-foreground/40 bg-background shrink-0" />);
   };
   const headerPadding = "p-2";
@@ -623,7 +625,7 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
             <div className="-mx-2 px-2 overflow-x-auto">
               <div className="flex items-center gap-2 py-1 w-max">
                 {step.queries.slice(0, 8).map((q: string, idx: number) => (
-                  <span key={`q-${idx}`} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground border border-border whitespace-nowrap">
+                  <span key={`q-${step.id || 'step'}-${idx}-${q}`} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground border border-border whitespace-nowrap">
                     <Search className="h-3 w-3 opacity-60" />
                     {q}
                   </span>
@@ -635,16 +637,12 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
             <div className="max-h-48 overflow-y-auto pr-1 md:pr-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
               <div className="grid grid-cols-1 gap-2">
                 {step.results.map((r: any, idx: number) => (
-                  <SourceCard key={`res-${idx}-${r?.url || idx}`} result={r} />
+                  <SourceCard key={`res-${step.id || 'step'}-${idx}-${r?.url || idx}`} result={r} />
                 ))}
               </div>
             </div>
           )}
-          {Array.isArray(step.answers) && step.answers.length > 0 && (
-            <div className="mt-1 text-xs text-muted-foreground border rounded-md p-2 whitespace-pre-wrap">
-              {step.answers.slice(0,3).join(" \n")}
-            </div>
-          )}
+          {/* provider short answers removed */}
     </div>
   );
 
@@ -702,7 +700,7 @@ function SourceCard({ result }: { result: any }) {
 function Input({ inProgress, onSend, isVisible }: InputProps) {
   const [val, setVal] = React.useState("");
   const { setState } = useCoAgent<any>({ name: "starterAgent" });
-  const { ready, hasTavilyKey } = useModelStore();
+  const { ready, hasSerperKey } = useModelStore();
   if (!isVisible) return null;
   return (
     <div className="p-0 order-2 bg-transparent">
@@ -717,11 +715,11 @@ function Input({ inProgress, onSend, isVisible }: InputProps) {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
                   if (val.trim()) {
-                    if (!ready || !hasTavilyKey) {
-                      toast.error('Please configure a model and Tavily key in Settings.');
+                    if (!ready || !hasSerperKey) {
+                      toast.error('Please configure a model and Serper key in Settings.');
                       return;
                     }
-                    setState({ plan: undefined, error: undefined });
+                    setState({ plan: { mode: "direct", steps: [] } as unknown as ResearchPlanTS, error: undefined, evidence: [] });
                     onSend(val);
                     setVal("");
                   }
@@ -729,7 +727,7 @@ function Input({ inProgress, onSend, isVisible }: InputProps) {
               }}
               placeholder="Message Beenet..."
               rows={1}
-              disabled={inProgress || !ready || !hasTavilyKey}
+              disabled={inProgress || !ready || !hasSerperKey}
               className="w-full resize-none bg-transparent border-0 outline-none py-4 px-4 text-xs md:text-sm placeholder:text-xs placeholder:text-foreground/40 text-foreground min-h-[60px] max-h-[120px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ 
                 fieldSizing: 'content',
@@ -748,16 +746,16 @@ function Input({ inProgress, onSend, isVisible }: InputProps) {
                 type="button"
                 onClick={() => {
                   if (val.trim()) {
-                    if (!ready || !hasTavilyKey) {
-                      toast.error('Please configure a model and Tavily key in Settings.');
+                    if (!ready || !hasSerperKey) {
+                      toast.error('Please configure a model and Serper key in Settings.');
                       return;
                     }
-                    setState({ plan: undefined, error: undefined });
+                    setState({ plan: { mode: "direct", steps: [] } as unknown as ResearchPlanTS, error: undefined, evidence: [] });
                     onSend(val);
                     setVal("");
                   }
                 }}
-                disabled={inProgress || !val.trim() || !ready || !hasTavilyKey}
+                disabled={inProgress || !val.trim() || !ready || !hasSerperKey}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground text-background hover:bg-foreground/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-sm font-medium shadow-lg disabled:shadow-none"
                 aria-label="Send message"
               >

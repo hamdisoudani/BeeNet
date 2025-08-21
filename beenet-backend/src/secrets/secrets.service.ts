@@ -30,8 +30,8 @@ export class SecretsService {
       baseUrl: m?.baseUrl,
       model: m?.model,
     }));
-    const hasTav = Boolean((doc as any).tavilyApiKey) || Boolean((doc as any).tavilyApiKeyEnc);
-    return { models: safe, defaultModelId: (doc as any).defaultModelId, hasTavilyKey: hasTav };
+    const hasSerper = Boolean((doc as any).serperApiKey) || Boolean((doc as any).serperApiKeyEnc);
+    return { models: safe, defaultModelId: (doc as any).defaultModelId, hasSerperKey: hasSerper };
   }
 
   async upsertForUser(userId: string, body: UpsertSecretsDto) {
@@ -78,7 +78,7 @@ export class SecretsService {
       {
         $set: {
           userId,
-          tavilyApiKey: (body as any)?.tavilyApiKey || (current as any)?.tavilyApiKey,
+          serperApiKey: (body as any)?.serperApiKey || (current as any)?.serperApiKey,
         },
         ...(normalized.length > 0 ? { $push: { models: { $each: normalized } } } : {}),
       },
@@ -215,54 +215,56 @@ export class SecretsService {
     return { ok: true } as const;
   }
 
-  async validateTavilyKey(apiKey: string): Promise<{ ok: boolean; info?: any; message?: string; }>{
+  async validateSerperKey(apiKey: string): Promise<{ ok: boolean; info?: any; message?: string; }>{
+    // Serper API docs: https://serper.dev (endpoint base: https://google.serper.dev)
+    // We'll attempt a lightweight POST to /search with a trivial query and verify response
     try {
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 6000);
-      const r = await fetch('https://api.tavily.com/usage', {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${apiKey}` } as any,
+      const r = await fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' } as any,
+        body: JSON.stringify({ q: 'serper health check', num: 1, autocorrect: true }),
         signal: controller.signal,
       } as any);
       clearTimeout(t);
       if (!r.ok) {
         if (r.status === 401) return { ok: false, message: 'unauthorized' };
+        if (r.status === 402) return { ok: false, message: 'payment_required' };
+        if (r.status === 429) return { ok: false, message: 'rate_limited' };
         return { ok: false, message: `provider_error_${r.status}` };
       }
       const j: any = await r.json().catch(() => ({}));
-      const info = {
-        keyUsage: j?.key?.usage,
-        keyLimit: j?.key?.limit,
-        plan: j?.account?.current_plan,
-        planUsage: j?.account?.plan_usage,
-        planLimit: j?.account?.plan_limit,
-      };
-      return { ok: true, info };
+      // Expect typical serper shape with searchParameters/organic fields
+      const looksValid = j && (j.searchParameters || j.organic || j.relatedSearches);
+      if (!looksValid) return { ok: false, message: 'invalid_response' };
+      // No specific usage endpoint; return minimal info
+      return { ok: true, info: { ok: true } };
     } catch (e: any) {
       return { ok: false, message: 'network_error' };
     }
   }
 
-  async setTavilyKeyForUser(userId: string, apiKey: string) {
-    const check = await this.validateTavilyKey(apiKey);
+  async setSerperKeyForUser(userId: string, apiKey: string) {
+    const check = await this.validateSerperKey(apiKey);
     if (!check.ok) return { ok: false, message: check.message } as const;
     const apiKeyEnc = this.encryptSecret(apiKey);
     await this.model.updateOne(
       { userId },
-      { $set: { userId, tavilyApiKeyEnc: apiKeyEnc }, $unset: { tavilyApiKey: 1 } as any },
+      { $set: { userId, serperApiKeyEnc: apiKeyEnc }, $unset: { serperApiKey: 1 } as any },
       { upsert: true },
     );
     await this.cache.del(`user_secrets:${userId}`);
     return { ok: true, info: check.info } as const;
   }
 
-  async removeTavilyKeyForUser(userId: string) {
-    await this.model.updateOne({ userId }, { $unset: { tavilyApiKey: 1, tavilyApiKeyEnc: 1 } });
+  async removeSerperKeyForUser(userId: string) {
+    await this.model.updateOne({ userId }, { $unset: { serperApiKey: 1, serperApiKeyEnc: 1 } });
     await this.cache.del(`user_secrets:${userId}`);
     return { ok: true } as const;
   }
 
-  async resolveTavilyKeyForUser(userId: string): Promise<string | undefined> {
+  async resolveSerperKeyForUser(userId: string): Promise<string | undefined> {
     try {
       const cacheKey = `user_secrets:${userId}`;
       let doc: any = await this.cache.get(cacheKey);
@@ -271,10 +273,10 @@ export class SecretsService {
         if (doc) await this.cache.set(cacheKey, doc, 60_000);
       }
       if (!doc) return undefined;
-      if ((doc as any).tavilyApiKey && typeof (doc as any).tavilyApiKey === 'string') {
-        return String((doc as any).tavilyApiKey);
+      if ((doc as any).serperApiKey && typeof (doc as any).serperApiKey === 'string') {
+        return String((doc as any).serperApiKey);
       }
-      const enc = (doc as any)?.tavilyApiKeyEnc;
+      const enc = (doc as any)?.serperApiKeyEnc;
       if (enc) {
         const v = this.decryptSecret(enc);
         return v || undefined;

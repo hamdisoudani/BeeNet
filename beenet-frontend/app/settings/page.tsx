@@ -91,7 +91,7 @@ export default function SettingsPage() {
         setStatusLoading(true); setStatusError(false);
         const rs = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
         const dj = await rs.json().catch(() => ({}));
-        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasTavilyKey)); else setStatusError(true);
+        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasSerperKey)); else setStatusError(true);
       } catch { setStatusError(true); }
       finally { setStatusLoading(false); }
     } catch (e: any) {
@@ -299,7 +299,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="border-t pt-6">
-        <TavilySection />
+        <SerperSection />
       </div>
     </div>
   );
@@ -335,7 +335,7 @@ function mapBackendError(code?: string): string | undefined {
   }
 }
 
-function TavilySection() {
+function SerperSection() {
   const [apiKey, setApiKey] = React.useState("");
   const [hasKey, setHasKey] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(true);
@@ -348,7 +348,7 @@ function TavilySection() {
       try {
         const res = await fetch('/api/secrets', { method: 'GET', credentials: 'include', cache: 'no-store' });
         const data = await res.json().catch(() => ({}));
-        setHasKey(Boolean(data?.hasTavilyKey));
+        setHasKey(Boolean(data?.hasSerperKey));
       } catch {}
       finally { setLoading(false); }
     })();
@@ -359,21 +359,21 @@ function TavilySection() {
     if (!key) { toast.error('Enter an API key'); return; }
     setSaving(true);
     try {
-      const res = await fetch('/api/secrets', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ apiKey: key }) });
+      const res = await fetch('/api/secrets', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ apiKey: key, _provider: 'serper' }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data?.ok === false) {
-        const msg = mapTavilyError(data?.message) || `Save failed (${res.status})`;
+        const msg = mapSerperError(data?.message) || `Save failed (${res.status})`;
         throw new Error(msg);
       }
       setHasKey(true);
       setApiKey("");
-      toast.success('Tavily key validated and saved');
+      toast.success('Serper key validated and saved');
       // Refresh global secrets status so banners/UI update immediately
       try {
         setStatusLoading(true); setStatusError(false);
         const rs = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
         const dj = await rs.json().catch(() => ({}));
-        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasTavilyKey)); else setStatusError(true);
+        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasSerperKey)); else setStatusError(true);
       } catch { setStatusError(true); }
       finally { setStatusLoading(false); }
     } catch (e: any) {
@@ -386,17 +386,17 @@ function TavilySection() {
   const onRemove = async () => {
     setSaving(true);
     try {
-      const r2 = await fetch('/api/secrets/tavily/remove', { method: 'POST', credentials: 'include' });
+      const r2 = await fetch('/api/secrets/serper/remove', { method: 'POST', credentials: 'include' });
       const d2 = await r2.json().catch(() => ({}));
       if (!r2.ok || d2?.ok === false) throw new Error('Failed to remove');
       setHasKey(false);
-      toast.success('Tavily key removed');
+      toast.success('Serper key removed');
       // Refresh global secrets status so banners/UI update immediately
       try {
         setStatusLoading(true); setStatusError(false);
         const rs = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
         const dj = await rs.json().catch(() => ({}));
-        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasTavilyKey)); else setStatusError(true);
+        if (rs.ok) setStatus(Boolean(dj?.hasModel), Boolean(dj?.hasSerperKey)); else setStatusError(true);
       } catch { setStatusError(true); }
       finally { setStatusLoading(false); }
     } catch (e: any) {
@@ -409,7 +409,7 @@ function TavilySection() {
   if (loading) {
     return (
       <div className="space-y-3">
-        <h2 className="text-sm font-medium">Tavily</h2>
+        <h2 className="text-sm font-medium">Serper</h2>
         <div className="space-y-2 max-w-lg">
           <Skeleton className="h-4 w-40" />
           <Skeleton className="h-9 w-full" />
@@ -424,8 +424,8 @@ function TavilySection() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-sm font-medium">Tavily</h2>
-      <p className="text-xs text-muted-foreground">Provide your Tavily API key to enable web search. We will validate it before saving.</p>
+      <h2 className="text-sm font-medium">Serper</h2>
+      <p className="text-xs text-muted-foreground">Provide your Serper API key to enable web search. We will validate it before saving.</p>
       {!loading && hasKey && !editing && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-emerald-500">Configured</span>
@@ -440,7 +440,7 @@ function TavilySection() {
             <input
               className="w-full rounded-md border px-3 py-2"
               type="password"
-              placeholder="tvly-..."
+              placeholder="serper-..."
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               autoComplete="off"
@@ -461,18 +461,30 @@ function TavilySection() {
   );
 }
 
-function mapTavilyError(code?: string): string | undefined {
+function mapSerperError(code?: string): string | undefined {
+  if (!code) return undefined;
+  if (code.startsWith('provider_error_')) {
+    const status = code.slice('provider_error_'.length);
+    if (status === '401') return 'Unauthorized: please check that your Serper key is correct.';
+    if (status === '402') return 'Payment required: your Serper plan likely has no credits or a billing issue.';
+    if (status === '403') return 'Forbidden: your Serper key lacks permission for this endpoint.';
+    if (status === '404') return 'Endpoint not found at Serper. Please try again later.';
+    if (status === '429') return 'Rate limited by Serper. Please try again shortly.';
+    return `Serper returned an error (status ${status}). Please try again.`;
+  }
   switch (code) {
     case 'unauthorized':
-      return 'Unauthorized: please check that your Tavily key is correct.';
-    case 'provider_error_400':
-    case 'provider_error_403':
-      return 'Tavily rejected the request.';
-    case 'provider_error_429':
-      return 'Tavily rate limited this request. Try again later.';
+      return 'Unauthorized: please check that your Serper key is correct.';
+    case 'payment_required':
+      return 'Your Serper plan has no credits or a billing issue. Please check your account.';
+    case 'serper_rate_limited':
+    case 'rate_limited':
+      return 'Rate limited by Serper. Please try again shortly.';
+    case 'invalid_response':
+      return 'Unexpected response from Serper. Please try again.';
     case 'network_error':
-      return 'Network error while contacting Tavily.';
+      return 'Network error while contacting Serper. Check your connection and try again.';
     default:
-      return undefined;
+      return 'We could not verify this Serper key. It may be incorrect or have no credits available.';
   }
 }

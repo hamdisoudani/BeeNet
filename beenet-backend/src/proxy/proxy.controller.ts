@@ -98,9 +98,10 @@ export class ProxyController {
       if (authUserId) {
         const s = await this.svc.getUserSecrets(authUserId);
         try {
-          const tav = await this.secrets.resolveTavilyKeyForUser(authUserId);
-          if (tav) headers['x-tavily-api-key'] = String(tav);
+          const serper = await this.secrets.resolveSerperKeyForUser(authUserId);
+          if (serper) headers['x-serper-api-key'] = String(serper);
         } catch {}
+        // Tavily removed; Serper is the default
 
         // Determine which model to use: explicit x-model-id header or user's default
         const requestedModelId = (req.headers['x-model-id'] as string) || undefined;

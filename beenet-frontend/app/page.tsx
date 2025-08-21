@@ -255,7 +255,7 @@ function Landing() {
               <ul className="space-y-2 md:space-y-3">
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
-                  <span className="text-xs md:text-sm"><strong>Unlimited</strong> research with your Tavily key</span>
+                  <span className="text-xs md:text-sm"><strong>Unlimited</strong> research with your Serper key</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
@@ -366,15 +366,15 @@ function StartPanel() {
   const router = useRouter();
   const [val, setVal] = useState("");
   const { addOrPrepend } = useConversations();
-  const { ready, hasTavilyKey } = useModelStore();
+  const { ready, hasSerperKey } = useModelStore();
 
   // Status bootstrapped globally in Providers; no local fetch here
 
   const onSend = async () => {
     const text = val.trim();
     if (!text) return;
-    if (!ready || !hasTavilyKey) {
-      toast.error('Please configure a model and Tavily key in Settings before starting a chat.');
+    if (!ready || !hasSerperKey) {
+      toast.error('Please configure a model and Serper key in Settings before starting a chat.');
       router.push('/settings');
       return;
     }
@@ -451,7 +451,7 @@ function StartPanel() {
                 }}
                 placeholder="Ask anything to start..."
                 rows={1}
-                disabled={!ready || !hasTavilyKey}
+                disabled={!ready || !hasSerperKey}
                 className="w-full resize-none bg-transparent border-0 outline-none py-4 px-4 text-sm md:text-base placeholder:text-sm placeholder:text-foreground/40 text-foreground min-h-[80px] max-h-[200px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   fieldSizing: 'content',
@@ -475,7 +475,7 @@ function StartPanel() {
                 <button
                   type="button"
                   onClick={onSend}
-                  disabled={!val.trim() || !ready || !hasTavilyKey}
+                  disabled={!val.trim() || !ready || !hasSerperKey}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground text-background hover:bg-foreground/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-sm font-medium shadow-lg disabled:shadow-none"
                   aria-label="Send message"
                 >
@@ -500,13 +500,14 @@ function StartPanel() {
             ))}
           </div>
         </div>
-        {(!ready || !hasTavilyKey) && (
+        {/* Only show after status has been fetched from backend (ready/hasSerperKey not undefined) */}
+        {((ready === false) || (hasSerperKey === false)) && (
           <div className="mt-4">
             <Alert variant={"destructive"}>
               <AlertTriangle className="mt-0.5" />
               <div className="col-start-2 flex items-center gap-2 text-sm">
                 <span className="font-medium">Setup required:</span>
-                <span>Add a model and your Tavily API key to start chatting.</span>
+                <span>Add a model and your Serper API key to start chatting.</span>
                 <Link href="/settings" className="underline">Settings</Link>
               </div>
             </Alert>

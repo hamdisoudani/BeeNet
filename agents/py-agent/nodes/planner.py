@@ -34,12 +34,9 @@ def _planner_tools() -> list[Any]:
         queries: List[str] = Field(default_factory=list)
 
     class StepControls(BaseModel):
-        """Optional controls for Tavily-backed research."""
+        """Deprecated: controls removed in favor of HQ dorks. Kept for backward compatibility."""
         include_domains: Optional[List[str]] = None
-        exclude_domains: Optional[List[str]] = None
         days: Optional[int] = Field(default=None, ge=1, le=3650)
-        max_results: Optional[int] = Field(default=None, ge=1, le=10)
-        search_depth: Optional[Literal["basic", "advanced"]] = None
 
     class SetResearchPlanArgs(BaseModel):
         """Enforced schema for planning output (compatible across Pydantic versions)."""
@@ -47,7 +44,7 @@ def _planner_tools() -> list[Any]:
         steps: List[str] = Field(default_factory=list)
         reason: Optional[str] = Field(default=None, max_length=240)
         structured_steps: Optional[List[PlanStepInput]] = None
-        controls: Optional[List[StepControls]] = None  # aligns 1:1 with steps
+        controls: Optional[List[StepControls]] = None  # aligns 1:1 with steps (deprecated)
 
     @tool(args_schema=SetResearchPlanArgs)
     def set_research_plan(
@@ -72,8 +69,6 @@ def _planner_tools() -> list[Any]:
 async def planner_node(
     state: AgentState, config: RunnableConfig
 ) -> Command[Literal["chat_node", "tool_node"]]:
-
-    print(f"Planner node called with state: {state} and config: {config}")
     logger = get_logger("nodes.planner")
     try:
       model = get_planner_model(config)
@@ -113,23 +108,24 @@ async def planner_node(
         "When mode='search', the steps MUST align exactly with the user request.\n"
         "- Steps are TITLES that describe the subgoal (they are NOT the web queries).\n"
         "- Each title should be specific and answer-oriented (e.g., 'Search current weather data for Canada').\n"
-        "- Provide web queries (1–3 per step) in the 'structured_steps' field. Queries must be high-signal and include the current year ("
+        "- Provide web queries (1–3 per step) in the 'structured_steps' field. Queries must be high-signal (HQ dorks) and include the current year ("
         f"{current_year}"
         ") to bias recency unless the user specifies a different date.\n"
         "- Do NOT include meta steps like 'Query APIs', 'Gather APIs', 'Summarize findings', or 'Synthesize research'.\n"
         "- Prefer 2-4 minimal steps; never exceed 6.\n"
         "- Think in terms of entities explicitly requested (locations, products, people) and create one step per entity/facet only if present in the user message.\n\n"
+        "HQ dorks guidance (search best practices):\n"
+        "- Be laser-focused on the user's intent and entities.\n"
+        "- Prefer official docs and authoritative sources; bias with site: operator when helpful.\n"
+        "- Avoid non-text sources (exclude YouTube, PDFs, images).\n"
+        "- Use operators when helpful: site:, inurl:, intitle:, filetype:html.\n"
+        "- Add recency terms (e.g., {current_year}) when relevant.\n\n"
         "Examples (good):\n"
         "- User: 'current weather in Canada, USA and Tunisia' → steps = [\"Search current weather data for Canada\", \"Search current weather data for USA\", \"Search current weather data for Tunisia\"]\n"
         "  Provide queries now in structured_steps, e.g., [\"current weather in Canada 2025 site:weatherapi.com\", \"Canada weather today 2025 site:weather.gov\"].\n"
         "- User: 'compare pricing for AWS S3 and GCP storage' → steps = [\"Search AWS S3 current pricing\", \"Search Google Cloud Storage current pricing\"]\n"
         "  Queries example per step: [\"AWS S3 pricing 2025 site:aws.amazon.com\", \"S3 pricing 2025 multi-region\"].\n\n"
-        "Controls examples (when mode='search'):\n"
-        "- Constrain to domains: controls=[{include_domains:['techcrunch.com','cnbc.com']}]\n"
-        "- Exclude domains: controls=[{exclude_domains:['reddit.com','quora.com']}]\n"
-        "- Freshness window: controls=[{days:30}]  # last 30 days\n"
-        "- Increase depth/results: controls=[{search_depth:'advanced', max_results:8}]\n"
-        "- Per-step mix: steps=['OpenAI news','Google AI blog']; controls=[{include_domains:['openai.com'],days:90},{include_domains:['blog.google'],days:90}]\n\n"
+        "Optional hint (when mode='search'): You may specify include_domains only when truly necessary; otherwise encode constraints in the dorks.\n\n"
         "Reuse context: If prior search already answered the request (see <previous_search_context>), prefer direct mode or minimal search steps that fill only the gaps.\n\n"
         "Examples (bad):\n"
         "- 'Query weather APIs' (too generic)\n"
@@ -224,23 +220,14 @@ async def planner_node(
                         controls.append({})
                         continue
                     out: dict[str, Any] = {}
-                    for k in ("include_domains", "exclude_domains"):
-                        v = c.get(k)
-                        if isinstance(v, list):
-                            out[k] = [str(x) for x in v[:6] if isinstance(x, (str, int, float))]
+                    v = c.get("include_domains")
+                    if isinstance(v, list):
+                        out["include_domains"] = [str(x) for x in v[:6] if isinstance(x, (str, int, float))]
                     d = c.get("days")
                     if isinstance(d, (int, float)):
                         dd = int(d)
                         if 1 <= dd <= 3650:
                             out["days"] = dd
-                    mr = c.get("max_results")
-                    if isinstance(mr, (int, float)):
-                        mm = int(mr)
-                        if 1 <= mm <= 10:
-                            out["max_results"] = mm
-                    sd = c.get("search_depth")
-                    if sd in ("basic", "advanced"):
-                        out["search_depth"] = sd
                     controls.append(out)
             logger.info(
                 "Planner parsed set_research_plan: mode=%s steps=%d structured_steps=%s",
@@ -313,7 +300,7 @@ async def planner_node(
 
     logger.info("Planner decided mode=%s; routing accordingly", plan_obj.mode)
     if plan_obj.mode == "search":
-        return Command(update={"plan": plan_dict}, goto="research_node")
+        return Command(update={"plan": plan_dict}, goto="search_collect")
     return Command(update={"plan": plan_dict}, goto="chat_node")
 
 

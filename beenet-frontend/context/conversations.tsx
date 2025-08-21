@@ -39,7 +39,11 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
       const res = await fetch(`/api/conversations?limit=20`, { method: "GET", credentials: "include", cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       const list: Conversation[] = Array.isArray(data?.conversations) ? data.conversations : [];
-      setConversations(list);
+      // De-duplicate by threadId to prevent duplicates from causing key conflicts
+      const uniqueList = list.filter((item, index, self) => 
+        index === self.findIndex(t => t.threadId === item.threadId)
+      );
+      setConversations(uniqueList);
       setNextCursor(typeof data?.nextCursor === "string" ? data.nextCursor : undefined);
       setHasMore(Boolean(data?.hasMore));
     } catch {
@@ -58,7 +62,13 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
       const res = await fetch(`/api/conversations?cursor=${encodeURIComponent(nextCursor)}&limit=20`, { method: "GET", credentials: "include", cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       const list: Conversation[] = Array.isArray(data?.conversations) ? data.conversations : [];
-      setConversations((prev) => [...prev, ...list]);
+      setConversations((prev) => {
+        // Combine and de-duplicate to prevent key conflicts
+        const combined = [...prev, ...list];
+        return combined.filter((item, index, self) => 
+          index === self.findIndex(t => t.threadId === item.threadId)
+        );
+      });
       setNextCursor(typeof data?.nextCursor === "string" ? data.nextCursor : undefined);
       setHasMore(Boolean(data?.hasMore));
     } catch {

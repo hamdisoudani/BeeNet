@@ -28,7 +28,7 @@ function StatusBootstrap() {
         setStatusError(false);
         const res = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
         const data = await res.json().catch(() => ({}));
-        if (res.ok) setStatus(Boolean(data?.hasModel), Boolean(data?.hasTavilyKey));
+        if (res.ok) setStatus(Boolean(data?.hasModel), Boolean(data?.hasSerperKey));
         else setStatusError(true);
       } catch {}
       finally { setStatusLoading(false); }

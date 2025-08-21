@@ -3,122 +3,73 @@ from typing import List, Dict, Any
 from brain.logger import get_logger
 import os
 import re
-from brain.context import get_tavily_api_key
+import requests
+from brain.context import get_serper_api_key
 
 
 @tool
-def tavily_search(
+def serper_search(
     query: str,
-    max_results: int = 5,
-    include_domains: List[str] | None = None,
-    exclude_domains: List[str] | None = None,
-    days: int | None = None,
-    search_depth: str | None = None,
+    num: int = 10,
+    gl: str = "us",
+    hl: str = "en",
+    autocorrect: bool = True,
 ) -> Dict[str, Any]:
     """
-    Search the web using Tavily and return a dict with:
-    - answer: concise LLM-generated answer (if available)
-    - results: list[{title, url, favicon?, score?}] (no page content)
+    Search the web using Serper and return a dict with:
+    - results: list[{title, url, favicon?}] (ordered by position as returned)
+    Accepts params similar to Serper: q, num, gl, hl, autocorrect
     """
-    logger = get_logger("tools.tavily")
-    try:
-        from tavily import TavilyClient
-    except Exception as import_error:
-        logger.exception("Tavily import failed: %s", import_error)
-        return {"answer": None, "results": [], "error": f"Missing dependency: {import_error}"}
-
-    # Sanitize input and enforce reasonable limits for security and performance
+    logger = get_logger("tools.serper_search")
     try:
         safe_query = str(query or "").strip()
-        # Collapse whitespace and strip obvious control chars
-        safe_query = re.sub(r"\s+", " ", safe_query)
-        safe_query = safe_query[:512]
-        safe_max = max(1, min(int(max_results or 5), int(os.getenv("TAVILY_MAX_RESULTS", "5"))))
+        safe_query = re.sub(r"\s+", " ", safe_query)[:512]
+        safe_num = max(1, min(int(num or 10), int(os.getenv("SERPER_MAX_RESULTS", "10"))))
 
-        api_key = get_tavily_api_key() or os.getenv("TAVILY_API_KEY", "")
+        api_key = get_serper_api_key() or os.getenv("SERPER_API_KEY", "")
         if not api_key:
-            return {"answer": None, "results": [], "error": "tavily_missing_key"}
-        client = TavilyClient(api_key=api_key)
-        logger.info("Tavily search: max_results=%d", safe_max)
-        kwargs: Dict[str, Any] = {
-            "query": safe_query,
-            "max_results": safe_max,
-            "include_answer": True,
-            "include_favicon": True,
-        }
-        if isinstance(include_domains, list) and include_domains:
-            kwargs["include_domains"] = [str(d) for d in include_domains[:6]]
-        if isinstance(exclude_domains, list) and exclude_domains:
-            kwargs["exclude_domains"] = [str(d) for d in exclude_domains[:6]]
-        if isinstance(days, int) and days > 0:
-            kwargs["days"] = min(max(days, 1), 3650)
-        if isinstance(search_depth, str) and search_depth in ("basic", "advanced"):
-            kwargs["search_depth"] = search_depth
-        raw = client.search(**kwargs)
-        # Expected shape is a dict with a 'results' list; handle other shapes defensively
-        normalized: List[Dict[str, Any]] = []
-        answer_val = None
-        query_val = None
-        response_time_val = None
-        images_val = None
-        if isinstance(raw, dict):
-            results_list = raw.get("results")
-            if isinstance(results_list, list):
-                for item in results_list:
-                    if isinstance(item, dict):
-                        # Prefer Tavily favicon if present, fallback derived by consumer
-                        entry: Dict[str, Any] = {
-                            "title": item.get("title"),
-                            "url": item.get("url"),
-                            "score": item.get("score"),
-                        }
-                        if isinstance(item.get("favicon"), str):
-                            entry["favicon"] = item["favicon"]
-                        normalized.append(entry)
-            # Capture meta fields if available
-            if isinstance(raw.get("answer"), str):
-                answer_val = raw["answer"]
-            if isinstance(raw.get("query"), str):
-                query_val = raw["query"]
-            rt = raw.get("response_time")
-            if isinstance(rt, (int, float)):
-                response_time_val = rt
-            if isinstance(raw.get("images"), list):
-                images_val = raw["images"]
-        elif isinstance(raw, list):
-            # Older/alternate shape directly returns a list
-            for item in raw:
+            return {"results": [], "error": "serper_missing_key"}
+        headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+        body: Dict[str, Any] = {"q": safe_query, "num": safe_num, "gl": gl, "hl": hl, "autocorrect": bool(autocorrect)}
+        resp = requests.post("https://google.serper.dev/search", headers=headers, json=body, timeout=12)
+        if resp.status_code == 401:
+            return {"results": [], "error": "serper_unauthorized"}
+        if resp.status_code == 402:
+            return {"results": [], "error": "serper_payment_required"}
+        if resp.status_code == 429:
+            return {"results": [], "error": "serper_rate_limited"}
+        if not resp.ok:
+            return {"results": [], "error": f"provider_error_{resp.status_code}"}
+        data = resp.json() if resp.content else {}
+        organic = data.get("organic") if isinstance(data, dict) else None
+        results: List[Dict[str, Any]] = []
+        if isinstance(organic, list):
+            for item in organic:
                 if isinstance(item, dict):
-                    normalized.append(
-                        {
-                            "title": item.get("title"),
-                            "url": item.get("url"),
-                            "score": item.get("score"),
-                        }
-                    )
-                elif isinstance(item, str):
-                    normalized.append({"title": item, "url": None, "score": None})
-        elif isinstance(raw, str):
-            normalized.append({"title": None, "url": None, "score": None})
-
-        logger.info("Tavily normalized results=%d has_answer=%s", len(normalized), bool(answer_val))
-        # Return the full Tavily payload with a normalized results list for consistency
-        payload: Dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
-        payload["results"] = normalized
-        return payload
+                    title = item.get("title")
+                    url = item.get("link") or item.get("url")
+                    if not isinstance(url, str):
+                        continue
+                    fav = None
+                    try:
+                        from urllib.parse import urlparse
+                        host = urlparse(url).hostname
+                        if host:
+                            fav = f"https://www.google.com/s2/favicons?domain={host}&sz=64"
+                    except Exception:
+                        fav = None
+                    results.append({
+                        "title": title,
+                        "url": url,
+                        "favicon": fav,
+                        "position": item.get("position"),
+                        "snippet": item.get("snippet"),
+                    })
+        return {"results": results}
     except Exception as e:
-        logger.exception("Tavily search failed")
-        # Do not leak detailed error messages from provider
-        msg = str(e).lower()
-        code = "search_failed"
-        if "unauthorized" in msg or "401" in msg:
-            code = "tavily_unauthorized"
-        elif "rate" in msg or "429" in msg or "limit" in msg:
-            code = "tavily_rate_limited"
-        elif "credit" in msg:
-            code = "tavily_no_credits"
-        return {"answer": None, "results": [], "error": code}
+        logger.exception("Serper search failed")
+        return {"results": [], "error": "search_failed"}
 
 
-tools = [tavily_search]
+tools = [serper_search]
 

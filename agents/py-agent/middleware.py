@@ -11,7 +11,7 @@ from brain.context import (
     model_base_url_var,
     model_api_key_var,
     model_name_var,
-    tavily_key_var,
+    serper_key_var,
 )
 from brain.logger import get_logger
 
@@ -40,7 +40,7 @@ class ProxyAuthAndModelMiddleware(BaseHTTPMiddleware):
             model_base_url_var.set(_safe_header(request, "x-openai-base-url"))
             model_api_key_var.set(_safe_header(request, "x-openai-api-key"))
             model_name_var.set(_safe_header(request, "x-openai-model"))
-            tavily_key_var.set(_safe_header(request, "x-tavily-api-key"))
+            serper_key_var.set(_safe_header(request, "x-serper-api-key"))
             # Safe diagnostic log (no secrets)
             base_url = model_base_url_var.get()
             base_host = None
@@ -51,12 +51,12 @@ class ProxyAuthAndModelMiddleware(BaseHTTPMiddleware):
                 except Exception:
                     base_host = "invalid-url"
             logger.debug(
-                "config_received path=%s base_host=%s model=%s has_api_key=%s has_tavily=%s",
+                "config_received path=%s base_host=%s model=%s has_api_key=%s has_serper=%s",
                 request.url.path,
                 base_host,
                 model_name_var.get(),
                 bool(model_api_key_var.get()),
-                bool(tavily_key_var.get()),
+                bool(serper_key_var.get()),
             )
         except Exception:
             # Do not fail the request if headers are missing; defaults will be used

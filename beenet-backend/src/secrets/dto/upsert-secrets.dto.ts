@@ -2,7 +2,7 @@ import { IsArray, IsObject, IsOptional, IsString, ValidateNested } from 'class-v
 import { Type } from 'class-transformer';
 
 export class UpsertSecretsDto {
-  @IsOptional() @IsString() tavilyApiKey?: string;
+  @IsOptional() @IsString() serperApiKey?: string;
 
   @IsOptional() @IsArray()
   @Type(() => Object)

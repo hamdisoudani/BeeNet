@@ -59,10 +59,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  // Upsert Tavily key via backend PUT /api/secrets/tavily
+  // Upsert Serper key via backend PUT /api/secrets/serper
   try {
     const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-    const url = `${backend}/api/secrets/tavily`;
+    const url = `${backend}/api/secrets/serper`;
     const headers: Record<string, string> = { "content-type": "application/json" };
     const cookie = req.headers.get("cookie");
     const auth = req.headers.get("authorization");

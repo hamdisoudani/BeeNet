@@ -65,16 +65,21 @@ export default function SidebarAppShell({ children }: { children: React.ReactNod
 
 
   useEffect(() => {
-    void refresh();
-    // bootstrap a newly created item
-    try {
-      const raw = sessionStorage.getItem("beenet:new-conv");
-      if (raw) {
-        const extra = JSON.parse(raw);
-        sessionStorage.removeItem("beenet:new-conv");
-        addOrPrepend(extra);
+    (async () => {
+      try {
+        await refresh();
+      } finally {
+        // bootstrap a newly created item AFTER refresh to avoid transient duplicates
+        try {
+          const raw = sessionStorage.getItem("beenet:new-conv");
+          if (raw) {
+            const extra = JSON.parse(raw);
+            sessionStorage.removeItem("beenet:new-conv");
+            addOrPrepend(extra);
+          }
+        } catch {}
       }
-    } catch {}
+    })();
   }, [refresh, addOrPrepend]);
 
   // React to new conversation creations from anywhere in the app
@@ -144,11 +149,11 @@ export default function SidebarAppShell({ children }: { children: React.ReactNod
                       <SidebarMenuButton aria-disabled>Start a conversation…</SidebarMenuButton>
                     </SidebarMenuItem>
                   )}
-                  <AnimatePresence initial={false}>
-                  {!loading && conversations.map((c) => {
+                  <AnimatePresence initial={false} mode="wait">
+                  {!loading && conversations.map((c, index) => {
                     const active = Boolean(pathname && pathname === `/c/${encodeURIComponent(c.threadId)}`);
                     return (
-                      <motion.div key={c.threadId} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
+                      <motion.div key={`${c.threadId}-${index}`} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
                         <SidebarMenuItem>
                         <div className="group relative flex items-center gap-1 w-full px-2">
                           {active && <div className="absolute left-1 top-1 bottom-1 w-1 rounded bg-primary" aria-hidden />}
@@ -372,17 +377,17 @@ function CollapsedBrandReveal() {
 
 
 function SecretsStatusBanner() {
-  const { ready, hasTavilyKey, statusLoading, statusError, setStatus, setStatusLoading, setStatusError } = useModelStore();
+  const { ready, hasSerperKey, statusLoading, statusError, setStatus, setStatusLoading, setStatusError } = useModelStore();
   const [dismissed, setDismissed] = React.useState(false);
   const needsModel = ready === false;
-  const needsTavily = hasTavilyKey === false;
-  const show = !statusLoading && !dismissed && (needsModel || needsTavily || statusError === true);
+  const needsSerper = hasSerperKey === false;
+  const show = !statusLoading && !dismissed && (needsModel || needsSerper || statusError === true);
   if (!show) return null;
-  const neutral = statusError && !(needsModel || needsTavily);
+  const neutral = statusError && !(needsModel || needsSerper);
   const text = neutral
     ? "We couldn’t verify your configuration."
-    : !needsModel && needsTavily
-      ? "Add your Tavily key to enable web search."
+    : !needsModel && needsSerper
+      ? "Add your Serper key to enable web search."
       : "Add a default model to start chatting.";
   return (
     <div className="px-2 mb-2" role="status" aria-live="polite">
@@ -403,7 +408,7 @@ function SecretsStatusBanner() {
               setStatusLoading(true); setStatusError(false);
               const res = await fetch('/api/secrets/status', { method: 'GET', credentials: 'include', cache: 'no-store' });
               const data = await res.json().catch(() => ({}));
-              if (res.ok) setStatus(Boolean(data?.hasModel), Boolean(data?.hasTavilyKey)); else setStatusError(true);
+              if (res.ok) setStatus(Boolean(data?.hasModel), Boolean(data?.hasSerperKey)); else setStatusError(true);
             } catch { setStatusError(true); }
             finally { setStatusLoading(false); }
           }}>Retry</Button>

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-    const url = `${backend}/api/secrets/tavily/remove`;
+    const url = `${backend}/api/secrets/serper/remove`;
     const headers: Record<string, string> = {};
     const cookie = req.headers.get("cookie");
     const auth = req.headers.get("authorization");

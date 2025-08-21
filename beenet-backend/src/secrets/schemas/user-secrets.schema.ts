@@ -29,11 +29,12 @@ export class UserSecrets {
   @Prop({ required: true, unique: true })
   userId!: string;
 
+  // Serper (replacement for Tavily)
   @Prop()
-  tavilyApiKey?: string; // legacy field; will be unset on write
+  serperApiKey?: string; // legacy field; will be unset on write
 
   @Prop({ type: Object })
-  tavilyApiKeyEnc?: any;
+  serperApiKeyEnc?: any;
 
   // Optional: multiple named model configs (per-user) with stable subdocument _id
   @Prop({ type: [ModelConfigSchema], required: false })
