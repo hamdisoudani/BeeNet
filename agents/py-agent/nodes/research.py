@@ -39,7 +39,7 @@ async def _sanitize_and_emit_state(config: RunnableConfig, state: AgentState, pl
         safe: dict[str, Any] = {}
         if isinstance(state, dict):
             for k, v in state.items():  # type: ignore[attr-defined]
-                if k in ("messages", "evidence"):
+                if k in ("messages", "evidence", "search_candidates"):
                     continue
                 safe[k] = v
         # Ensure the latest plan is present
@@ -212,11 +212,39 @@ async def research_node(
         # Return updated plan only; routing handled by conditional edges
         return {"plan": plan.model_dump()}
 
+    def _tbs_from_time_range(val: str | None) -> str | None:
+        if not isinstance(val, str):
+            return None
+        m = {
+            "day": "qdr:d",
+            "week": "qdr:w",
+            "month": "qdr:m",
+            "year": "qdr:y",
+        }.get(val)
+        return m
+
     async def run_one(q: str) -> dict[str, Any]:
         # Enforce per-query timeout and return normalized payload including original query
         timeout_s = float(os.getenv("SERPER_QUERY_TIMEOUT_SECONDS", "12"))
         try:
-            payload = await asyncio.wait_for(_search_query_via_tool(q, max_results=5), timeout=timeout_s)
+            # Map per-step controls to Serper params and prefer direct tool invocation to pass them
+            step_ctrl = (step.get("controls") if isinstance(step, dict) else None) or {}
+            gl = step_ctrl.get("country") or "us"
+            autocorrect = bool(step_ctrl.get("autocorrect", True))
+            mr = step_ctrl.get("max_results")
+            max_num = int(mr) if isinstance(mr, (int, float)) else 5
+            tbs = _tbs_from_time_range(step_ctrl.get("time_range"))
+            from contextvars import copy_context
+            ctx = copy_context()
+            def _call_tool():
+                try:
+                    return ctx.run(lambda: serper_search.invoke({
+                        "query": q, "num": max_num, "gl": gl, "hl": "en", "autocorrect": autocorrect, "tbs": tbs
+                    }))
+                except Exception:
+                    return ctx.run(lambda: serper_search.func(query=q, num=max_num, gl=gl, hl="en", autocorrect=autocorrect, tbs=tbs))  # type: ignore[attr-defined]
+            loop = asyncio.get_running_loop()
+            payload = await asyncio.wait_for(loop.run_in_executor(_SERPER_EXECUTOR, _call_tool), timeout=timeout_s)
         except asyncio.TimeoutError:
             payload = {"answer": None, "results": [], "error": "timeout"}
 

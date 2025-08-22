@@ -365,6 +365,7 @@ function ChatWithSidebar() { return (<><StartPanel /><Toaster richColors /></>);
 function StartPanel() {
   const router = useRouter();
   const [val, setVal] = useState("");
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const { addOrPrepend } = useConversations();
   const { ready, hasSerperKey } = useModelStore();
 
@@ -378,6 +379,12 @@ function StartPanel() {
       router.push('/settings');
       return;
     }
+    
+    // Prevent multiple simultaneous conversation creation
+    if (isCreatingConversation) return;
+    
+    setIsCreatingConversation(true);
+    
     try {
       const queue = usePendingTurnStore.getState();
       // Request a server-generated chat id and route
@@ -416,28 +423,32 @@ function StartPanel() {
         // Navigate without query params; Chat page will consume the queued message
         router.push(`/c/${id}`);
       }
-    } catch {}
+    } catch (error) {
+      toast.error("Failed to create conversation");
+    } finally {
+      setIsCreatingConversation(false);
+    }
   };
 
   return (
     <div className="h-full w-full flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-6">
-            <Image src={Logo} alt="BeeNet" width={84} height={84} priority />
+        {/* Header - Clean & Professional */}
+        <div className="text-center mb-16">
+          <div className="mb-8">
+            <Image src={Logo} alt="BeeNet" width={56} height={56} priority className="mx-auto mb-6" />
           </div>
-          <h1 className="text-2xl md:text-3xl font-medium text-foreground/90 mb-2">
-            Where knowledge begins
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-light text-foreground mb-6 tracking-tight">
+            Research anything
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Ask anything and get intelligent answers with real-time research
+          <p className="text-lg sm:text-xl text-muted-foreground max-w-lg mx-auto font-light">
+            AI-powered research with unlimited searches using your API keys
           </p>
         </div>
 
-        {/* Main Input Area - Clean Professional Design */}
-        <div className="relative">
-          <div className="group relative rounded-2xl border border-border bg-background hover:border-border/80 transition-all duration-300 focus-within:border-primary/40 focus-within:shadow-lg backdrop-blur-sm">
+        {/* Main Input Area - Professional with Better Textarea */}
+        <div className="relative max-w-3xl mx-auto">
+          <div className="relative border border-border/60 rounded-xl bg-background/50 backdrop-blur-sm transition-all duration-200 focus-within:border-border focus-within:shadow-lg focus-within:shadow-black/5">
             {/* Input Area */}
             <div className="relative">
               <textarea
@@ -449,10 +460,10 @@ function StartPanel() {
                     onSend();
                   }
                 }}
-                placeholder="Ask anything to start..."
+                placeholder="Ask me anything..."
                 rows={1}
-                disabled={!ready || !hasSerperKey}
-                className="w-full resize-none bg-transparent border-0 outline-none py-4 px-4 text-sm md:text-base placeholder:text-sm placeholder:text-foreground/40 text-foreground min-h-[80px] max-h-[200px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!ready || !hasSerperKey || isCreatingConversation}
+                className="w-full resize-none bg-transparent border-0 outline-none py-6 px-6 text-xs md:text-sm placeholder:text-muted-foreground text-foreground min-h-[100px] max-h-[200px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   fieldSizing: 'content',
                   scrollbarWidth: 'none',
@@ -461,56 +472,88 @@ function StartPanel() {
               />
               
               {/* Bottom Bar */}
-              <div className="flex items-center justify-between px-4 pb-4">
-                <div className="flex items-center gap-3 text-xs text-foreground/50">
+              <div className="flex items-center justify-between px-6 pb-6">
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <button 
                     type="button"
-                    className="inline-flex items-center justify-center h-7 w-7 rounded-md text-foreground/60 hover:text-foreground hover:bg-background/50 transition-colors"
+                    onClick={() => toast.info("File attachments coming soon", {
+                      description: "Document upload and analysis features in development",
+                      duration: 2000,
+                    })}
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-200"
                   >
-                    <Paperclip className="h-3.5 w-3.5" />
+                    <Paperclip className="h-4 w-4" />
                   </button>
-                  <span className="hidden sm:inline">Press Ctrl + Enter to send</span>
-                  <span className="sm:hidden">Ctrl + Enter</span>
+                  <div className="hidden sm:flex items-center gap-1 text-xs">
+                    <kbd className="px-1.5 py-0.5 bg-muted/50 border border-border/50 rounded">⌘</kbd>
+                    <span>+</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted/50 border border-border/50 rounded">↵</kbd>
+                    <span className="ml-1">to send</span>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={onSend}
-                  disabled={!val.trim() || !ready || !hasSerperKey}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground text-background hover:bg-foreground/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-sm font-medium shadow-lg disabled:shadow-none"
+                  disabled={!val.trim() || !ready || !hasSerperKey || isCreatingConversation}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-sm font-medium"
                   aria-label="Send message"
                 >
-                  <Send className="h-4 w-4" />
-                  <span className="hidden sm:inline">Send</span>
+                  {isCreatingConversation ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                      <span className="hidden sm:inline">Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      <span className="hidden sm:inline">Send</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Suggestions */}
-          <div className="mt-6 flex flex-wrap gap-2 justify-center px-4">
-            {["Explain quantum physics", "Write a Python script", "Summarize latest AI news"].map((suggestion, i) => (
+        {/* Simple Suggestions */}
+        <div className="mt-12 max-w-2xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[
+              "Latest AI developments",
+              "Climate change research", 
+              "Stock market analysis"
+            ].map((suggestion, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => setVal(suggestion)}
-                className="inline-flex items-center px-3 py-2 rounded-lg border border-white/10 bg-background/50 backdrop-blur hover:border-white/20 hover:bg-background/70 transition-all duration-200 text-xs text-foreground/70 hover:text-foreground"
+                disabled={isCreatingConversation}
+                className="p-3 text-left border border-border/50 rounded-lg bg-background/30 hover:bg-background/50 hover:border-border transition-all duration-200 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span className="truncate max-w-[120px] sm:max-w-none">{suggestion}</span>
+                {suggestion}
               </button>
             ))}
           </div>
         </div>
-        {/* Only show after status has been fetched from backend (ready/hasSerperKey not undefined) */}
+        
+        {/* Setup Alert - Clean Design */}
         {((ready === false) || (hasSerperKey === false)) && (
-          <div className="mt-4">
-            <Alert variant={"destructive"}>
-              <AlertTriangle className="mt-0.5" />
-              <div className="col-start-2 flex items-center gap-2 text-sm">
-                <span className="font-medium">Setup required:</span>
-                <span>Add a model and your Serper API key to start chatting.</span>
-                <Link href="/settings" className="underline">Settings</Link>
+          <div className="mt-8 max-w-2xl mx-auto">
+            <div className="border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/50 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-orange-800 dark:text-orange-200 mb-1">Setup required</p>
+                  <p className="text-orange-700 dark:text-orange-300">
+                    Configure your API keys in{" "}
+                    <Link href="/settings" className="underline hover:no-underline">
+                      Settings
+                    </Link>
+                    {" "}to start researching
+                  </p>
+                </div>
               </div>
-            </Alert>
+            </div>
           </div>
         )}
       </div>

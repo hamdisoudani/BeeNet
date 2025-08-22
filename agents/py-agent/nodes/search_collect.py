@@ -10,10 +10,12 @@ from contextvars import copy_context
 
 from langchain_core.runnables import RunnableConfig
 
-from brain.state import AgentState, ResearchPlan
+from brain.state import AgentState, SearchResult
 from brain.logger import get_logger
 from copilotkit.langgraph import copilotkit_customize_config, copilotkit_emit_state
 from tools.web_search import serper_search
+from langgraph.types import Command
+from langgraph.graph import END
 
 
 # Lightweight in-memory cache for Serper results to improve responsiveness
@@ -29,18 +31,16 @@ _THREADPOOL_WORKERS = max(1, int(os.getenv("SERPER_THREADPOOL_WORKERS", os.geten
 _SERPER_EXECUTOR = ThreadPoolExecutor(max_workers=_THREADPOOL_WORKERS)
 
 
-async def _sanitize_and_emit_state(config: RunnableConfig, state: AgentState, plan_obj: ResearchPlan | dict | None = None):
+async def _sanitize_and_emit_state(config: RunnableConfig, state: AgentState, plan_obj: dict | None = None):
     try:
         safe: dict[str, Any] = {}
         if isinstance(state, dict):
             for k, v in state.items():  # type: ignore[attr-defined]
-                if k in ("messages", "evidence"):
+                if k in ("messages", "evidence", "search_candidates", "current_step_id"):
                     continue
                 safe[k] = v
         if plan_obj is not None:
-            if hasattr(plan_obj, "model_dump"):
-                safe["plan"] = plan_obj.model_dump()  # type: ignore[index]
-            elif isinstance(plan_obj, dict):
+            if isinstance(plan_obj, dict):
                 safe["plan"] = plan_obj
         await copilotkit_emit_state(config, safe)
     except Exception:
@@ -103,40 +103,48 @@ async def search_collect_node(state: AgentState, config: RunnableConfig) -> dict
     logger = get_logger("nodes.search_collect")
     config = copilotkit_customize_config(config, emit_tool_calls=False)
 
-    # Parse plan
+    # Parse plan as dict
     try:
-        plan_raw = state.get("plan")  # type: ignore[assignment]
-        plan = ResearchPlan(**plan_raw) if isinstance(plan_raw, dict) else plan_raw
+        plan = state.get("plan")  # type: ignore[assignment]
     except Exception:
         plan = None
-    if not plan or plan.mode != "search":
+    if not isinstance(plan, dict) or (plan.get("mode") or "") != "search":
         logger.info("SearchCollect: no search plan; nothing to do")
         return None
 
     # Normalize steps and find first pending
     try:
-        steps: List[Any] = list(getattr(plan, "steps", []) or [])
+        steps: List[Any] = list((plan.get("steps") if isinstance(plan, dict) else []) or [])
     except Exception:
         steps = []
     normalized_steps: List[Dict[str, Any]] = []
     from uuid import uuid4
     changed = False
+    logger.info("SearchCollect: raw steps count=%d", len(steps))
     for s in steps:
-        if isinstance(s, dict) and "title" in s:
-            s.setdefault("id", str(uuid4()))
-            s.setdefault("queries", [s.get("title")] if isinstance(s.get("title"), str) else [])
-            s.setdefault("results", [])
-            s.setdefault("status", "pending")
-            normalized_steps.append(s)
+        if hasattr(s, "model_dump"):
+            d = s.model_dump()  # type: ignore[attr-defined]
+        elif isinstance(s, dict):
+            d = dict(s)
         elif isinstance(s, str):
-            normalized_steps.append({"id": str(uuid4()), "title": s, "queries": [s], "results": [], "status": "pending"})
-            changed = True
+            d = {"id": str(uuid4()), "title": s, "queries": [s], "results": [], "status": "pending"}
+        else:
+            d = None
+        if isinstance(d, dict) and "title" in d:
+            d.setdefault("id", str(uuid4()))
+            d.setdefault("queries", [d.get("title")] if isinstance(d.get("title"), str) else [])
+            d.setdefault("results", [])
+            d.setdefault("status", "pending")
+            normalized_steps.append(d)
+            # mark changed if original was not a dict PlanStep
+            if not isinstance(s, dict):
+                changed = True
         else:
             changed = True
     if changed:
         try:
-            plan.steps = normalized_steps  # type: ignore[assignment]
-            state["plan"] = plan.model_dump()  # type: ignore[index]
+            plan["steps"] = normalized_steps
+            state["plan"] = plan  # type: ignore[index]
             await _sanitize_and_emit_state(config, state, plan)
         except Exception:
             pass
@@ -147,15 +155,17 @@ async def search_collect_node(state: AgentState, config: RunnableConfig) -> dict
             step_idx = i
             break
     if step_idx is None:
-        logger.info("SearchCollect: no pending steps")
+        logger.info("SearchCollect: no pending steps. statuses=%s", [ns.get("status") for ns in normalized_steps])
         return None
 
     step = normalized_steps[step_idx]
     step["status"] = "searching"
     normalized_steps[step_idx] = step
-    plan.steps = normalized_steps  # type: ignore[assignment]
     try:
-        state["plan"] = plan.model_dump()  # type: ignore[index]
+        # Set current active step id for downstream nodes
+        state["current_step_id"] = str(step.get("id"))  # type: ignore[index]
+        plan["steps"] = normalized_steps
+        state["plan"] = plan  # type: ignore[index]
         await _sanitize_and_emit_state(config, state, plan)
     except Exception:
         pass
@@ -163,31 +173,70 @@ async def search_collect_node(state: AgentState, config: RunnableConfig) -> dict
     # Run Serper for each query (bounded concurrency)
     queries: List[str] = list(step.get("queries") or [])[:5]
     if not queries:
-        return {"plan": plan.model_dump()}
+        return {"plan": plan}
+
+    def _tbs_from_time_range(val: str | None) -> str | None:
+        if not isinstance(val, str):
+            return None
+        m = {
+            "day": "qdr:d",
+            "week": "qdr:w",
+            "month": "qdr:m",
+            "year": "qdr:y",
+        }.get(val)
+        return m
 
     async def run_one(q: str) -> dict[str, Any]:
         timeout_s = float(os.getenv("SERPER_QUERY_TIMEOUT_SECONDS", "12"))
         try:
-            payload = await asyncio.wait_for(_search_query_via_tool(q, max_results=10), timeout=timeout_s)
+            # Map per-step controls to Serper params and call tool directly once
+            step_ctrl = (step.get("controls") if isinstance(step, dict) else None) or {}
+            gl = step_ctrl.get("country") or "us"
+            autocorrect = bool(step_ctrl.get("autocorrect", True))
+            mr = step_ctrl.get("max_results")
+            max_num = int(mr) if isinstance(mr, (int, float)) else 10
+            tbs = _tbs_from_time_range(step_ctrl.get("time_range"))
+            from tools.web_search import serper_search
+            from contextvars import copy_context
+            ctx = copy_context()
+            def _call_direct():
+                return ctx.run(lambda: serper_search.invoke({
+                    "query": q, "num": max_num, "gl": gl, "hl": "en", "autocorrect": autocorrect, "tbs": tbs
+                }))
+            loop = asyncio.get_running_loop()
+            payload = await asyncio.wait_for(loop.run_in_executor(_SERPER_EXECUTOR, _call_direct), timeout=timeout_s)
         except asyncio.TimeoutError:
             payload = {"results": [], "error": "timeout"}
-        items = payload.get("results") if isinstance(payload, dict) else []
-        out: dict[str, Any] = {"query": q, "results": []}
+        
+        # Parse Serper response - organic results are in payload.get("organic")
+        organic_results = payload.get("organic", []) if isinstance(payload, dict) else []
+        search_results: List[SearchResult] = []
+        
         try:
-            for it in items:
-                if not isinstance(it, dict):
+            for item in organic_results:
+                if not isinstance(item, dict):
                     continue
-                url = it.get("url")
-                if isinstance(url, str):
-                    out["results"].append({
-                        "title": it.get("title"),
-                        "url": url,
-                        "favicon": _favicon_for_url(url),
-                        "position": it.get("position"),
-                        "snippet": it.get("snippet"),
-                    })
+                link = item.get("link")
+                if not isinstance(link, str):
+                    continue
+                
+                # Create SearchResult object matching Serper structure
+                try:
+                    search_result = SearchResult(
+                        title=item.get("title"),
+                        link=link,
+                        snippet=item.get("snippet"),
+                        position=item.get("position"),
+                        favicon=_favicon_for_url(link)
+                    )
+                    search_results.append(search_result)
+                except Exception:
+                    # Skip invalid results
+                    continue
         except Exception:
             pass
+        
+        out: dict[str, Any] = {"query": q, "results": search_results}
         if isinstance(payload, dict) and isinstance(payload.get("error"), str):
             out["error"] = payload["error"]
         return out
@@ -198,42 +247,63 @@ async def search_collect_node(state: AgentState, config: RunnableConfig) -> dict
         async with semaphore:
             return await run_one(q)
 
-    tasks: List[asyncio.Task] = [asyncio.create_task(guarded_run(q)) for q in queries]
-    aggregated_results: List[dict[str, Any]] = []
-    for task in asyncio.as_completed(tasks):
+    try:
+        tasks: List[asyncio.Task] = [asyncio.create_task(guarded_run(q)) for q in queries]
+        aggregated_results: List[SearchResult] = []
+        for task in asyncio.as_completed(tasks):
+            try:
+                one = await task
+            except Exception:
+                one = {"results": []}
+            try:
+                # Results are now SearchResult objects
+                for r in one.get("results") or []:
+                    if isinstance(r, SearchResult):
+                        aggregated_results.append(r)
+            except Exception:
+                pass
+
+        # Deduplicate by link/URL, preserve order
+        seen_urls: set[str] = set()
+        deduped: List[SearchResult] = []
+        for r in aggregated_results:
+            url = r.link
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            deduped.append(r)
+
+        # Store search_candidates as {step_id: List[SearchResult]} structure
         try:
-            one = await task
+            step_id = str(step.get("id"))
+            existing_map = state.get("search_candidates", {}) if isinstance(state, dict) else {}
+            base_map = dict(existing_map) if isinstance(existing_map, dict) else {}
+            # Store as list of SearchResult objects (they'll be serialized when emitted)
+            base_map[step_id] = deduped
         except Exception:
-            one = {"results": []}
+            base_map = {str(step.get("id")): deduped}
         try:
-            for r in one.get("results") or []:
-                if isinstance(r, dict):
-                    aggregated_results.append(r)
+            plan["steps"] = normalized_steps
+            state["plan"] = plan  # type: ignore[index]
+            await _sanitize_and_emit_state(config, state, plan)
         except Exception:
             pass
-
-    # Deduplicate by URL, preserve order
-    seen_urls: set[str] = set()
-    deduped: List[dict[str, Any]] = []
-    for r in aggregated_results:
-        u = r.get("url") if isinstance(r, dict) else None
-        if not isinstance(u, str):
-            continue
-        if u in seen_urls:
-            continue
-        seen_urls.add(u)
-        deduped.append(r)
-
-    # Update step results only (selection happens in the next node)
-    step["results"] = deduped
-    normalized_steps[step_idx] = step
-    plan.steps = normalized_steps  # type: ignore[assignment]
-    try:
-        state["plan"] = plan.model_dump()  # type: ignore[index]
-        await _sanitize_and_emit_state(config, state, plan)
+        logger.info("search_collect_node: collected %d results for step %s", len(deduped), step_id)
+        return {"plan": plan, "search_candidates": base_map, "current_step_id": str(step.get("id"))}
     except Exception:
-        pass
+        # Strict error handling: revert step state, clear candidates, emit error, and end
+        try:
+            step["status"] = "pending"
+            normalized_steps[step_idx] = step
+            plan["steps"] = normalized_steps
+            state["plan"] = plan  # type: ignore[index]
+            err = {"type": "search_collect_error", "message": "Failed to collect search results."}
+            state["error"] = err  # type: ignore[index]
+            await _sanitize_and_emit_state(config, state, plan)
+        except Exception:
+            pass
+        return Command(goto=END, update={"error": {"type": "search_collect_error"}})
 
-    return {"plan": plan.model_dump()}
+
 
 

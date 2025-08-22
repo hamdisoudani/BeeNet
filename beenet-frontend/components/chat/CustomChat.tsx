@@ -29,13 +29,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useCoAgent, useCoAgentStateRender } from "@copilotkit/react-core";
-import type { AgentStateTS, ResearchPlanTS, PlanStepTS } from "@/types/agent";
+import type { AgentStateTS, ResearchPlanTS, PlanStepTS, PlanControlsTS } from "@/types/agent";
 import { useModelStore } from "@/stores/modelStore";
 import type { InputProps } from "@copilotkit/react-ui";
 
 // Removed react-virtuoso to prevent auto-scroll jitter
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, Loader2, Send, Check as CheckIcon, ArrowLeft } from "lucide-react";
+import { ChevronDown, Search, Loader2, Send, Check as CheckIcon, ArrowLeft, FileText } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
  
@@ -416,21 +416,47 @@ function InlinePlan({ plan, running, nodeName }: { plan: ResearchPlanTS; running
 
 function ErrorBanner({ error }: { error: any }) {
   try {
-    const message: string | undefined = typeof error?.message === "string" ? error.message : undefined;
     const type: string | undefined = typeof error?.type === "string" ? error.type : undefined;
     const codes: string[] = Array.isArray(error?.codes) ? error.codes : [];
-    if (!message) return null;
+    const rawMessage: string | undefined = typeof error?.message === "string" ? error.message : undefined;
+    const mapMessage = (t?: string, fallback?: string): { title: string; hint?: string } => {
+      switch (t) {
+        case "planner_model_init_error":
+          return { title: "Planner model failed to initialize.", hint: "Check your model configuration in Settings and try again." };
+        case "planner_error":
+          return { title: "Planner failed to run.", hint: "Try again or switch models in Settings." };
+        case "planner_toolcall_unsupported":
+          return { title: "Selected model doesn’t support planning tools.", hint: "Choose a tool-enabled model in Settings." };
+        case "planner_parse_error":
+          return { title: "Planner returned an invalid plan.", hint: "Please try again or adjust your request." };
+        case "model_init_error":
+          return { title: "Chat model failed to initialize.", hint: "Verify API key, base URL, and model name in Settings." };
+        case "model_error":
+          return { title: "The model failed to respond.", hint: "Try again or switch models." };
+        case "picker_error":
+          return { title: "Failed to select URLs for this step.", hint: "Try again or refine the query." };
+        case "search_collect_error":
+          return { title: "Failed to collect search results.", hint: "Check your Serper key in Settings and try again." };
+        case "scrape_error":
+          return { title: "Failed to scrape selected URLs.", hint: "Try again later or modify the step queries." };
+        default:
+          return { title: fallback || "Something went wrong.", hint: undefined };
+      }
+    };
+    const mapped = mapMessage(type, rawMessage);
+    if (!mapped.title) return null;
     return (
       <div className="w-full">
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive">
-          <div className="text-sm font-medium">{message}</div>
-          <div className="mt-1 text-xs text-destructive/80">
-            {(type || codes.length > 0) && (
-              <span>
-                {type ? `${type}` : ''}{type && codes.length > 0 ? ' · ' : ''}{codes.length > 0 ? `codes: ${codes.join(', ')}` : ''}
-              </span>
-            )}
-          </div>
+          <div className="text-sm font-medium">{mapped.title}</div>
+          {(mapped.hint || type || codes.length > 0) && (
+            <div className="mt-1 text-xs text-destructive/80">
+              {mapped.hint && <span>{mapped.hint}</span>}
+              {(type || codes.length > 0) && (
+                <span className="ml-1 opacity-80">{type ? `(${type}` : ''}{type && codes.length > 0 ? ` · codes: ${codes.join(', ')}` : (type ? ')' : '')}{!type && codes.length > 0 ? `codes: ${codes.join(', ')}` : ''}</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -498,25 +524,15 @@ function SearchPlan({ plan, running }: { plan: ResearchPlanTS; running?: boolean
   }
   
   const normalized = React.useMemo(() => {
-    return steps.map((s: any, i: number) => {
-      if (typeof s === "string") {
-        return { 
-          key: `step-${i}`, 
-          id: `step-${i}`, 
-          title: s, 
-          status: undefined, 
-          queries: [], 
-          results: [], 
-          error: undefined 
-        };
-      }
+    return (steps as PlanStepTS[]).map((s: any, i: number) => {
       const id = typeof s?.id === "string" ? s.id : `step-${i}`;
       const title = s?.title ?? String(s ?? "");
       const status = typeof s?.status === "string" ? s.status : undefined;
       const queries = Array.isArray(s?.queries) ? s.queries : [];
       const results = Array.isArray(s?.results) ? s.results : [];
       const error = typeof s?.error === "object" ? s.error : undefined;
-      return { key: id, id, title, status, queries, results, error };
+      const controls: PlanControlsTS | undefined = (s && typeof s === 'object' && s.controls) ? s.controls : undefined;
+      return { key: id, id, title, status, queries, results, error, controls };
     });
   }, [steps]);
 
@@ -588,26 +604,56 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
   const status: string = typeof step?.status === 'string' ? step.status : 'pending';
   const [open, setOpen] = React.useState<boolean>(!!isActive);
   React.useEffect(() => setOpen(!!isActive), [isActive]);
+  
+  // Add subtle highlight for active steps
+  const isActiveStatus = status === 'searching' || status === 'reading';
+  const cardClassName = `rounded-lg border transition-all duration-300 ${
+    isActiveStatus 
+      ? 'border-primary/30 bg-primary/5 shadow-sm' 
+      : 'border-border bg-card'
+  }`;
   const Pill = () => {
     if (step?.error) return (<div className="h-5 w-5 rounded-full bg-red-500 text-white grid place-items-center shrink-0"><span className="text-[10px] font-bold">!</span></div>);
     if (status === 'completed') return (<div className="h-5 w-5 rounded-full bg-emerald-500 text-white grid place-items-center shrink-0"><CheckIcon className="h-3.5 w-3.5" /></div>);
-    if (status === 'reading' || status === 'searching') return (<div className="h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center shrink-0"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>);
+    if (status === 'reading') return (<div className="h-5 w-5 rounded-full bg-blue-500 text-white grid place-items-center shrink-0"><FileText className="h-3.5 w-3.5" /></div>);
+    if (status === 'searching') return (<div className="h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center shrink-0"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>);
     return (<div className="h-5 w-5 rounded-full border border-muted-foreground/40 bg-background shrink-0" />);
   };
   const headerPadding = "p-2";
+  const getStatusText = () => {
+    if (step?.error) return "Error";
+    if (status === 'completed') return "Completed";
+    if (status === 'reading') return "Reading content...";
+    if (status === 'searching') return "Searching...";
+    return "Pending";
+  };
+
+  const getStatusColor = () => {
+    if (step?.error) return "text-red-600";
+    if (status === 'completed') return "text-emerald-600";
+    if (status === 'reading') return "text-blue-600";
+    if (status === 'searching') return "text-primary";
+    return "text-muted-foreground";
+  };
+
   const Header = (
     <div className={`flex items-center gap-2 ${headerPadding}`}>
       <Pill />
-      {collapsible ? (
-        <CollapsibleTrigger className="group flex items-center gap-2 text-left w-full">
-          <span className="text-foreground/90 break-words w-full min-w-0 text-xs md:text-sm">{step.title}</span>
-          <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" />
-        </CollapsibleTrigger>
-      ) : (
-        <div className="text-left w-full">
-          <span className="text-foreground/90 break-words w-full min-w-0 text-xs md:text-sm">{step.title}</span>
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        {collapsible ? (
+          <CollapsibleTrigger className="group flex items-center gap-2 text-left w-full">
+            <span className="text-foreground/90 break-words w-full min-w-0 text-xs md:text-sm">{step.title}</span>
+            <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180 shrink-0" />
+          </CollapsibleTrigger>
+        ) : (
+          <div className="text-left w-full">
+            <span className="text-foreground/90 break-words w-full min-w-0 text-xs md:text-sm">{step.title}</span>
+          </div>
+        )}
+        <div className={`text-[10px] font-medium transition-colors duration-300 ${getStatusColor()}`}>
+          {getStatusText()}
         </div>
-      )}
+      </div>
     </div>
   );
 
@@ -622,7 +668,7 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
             </div>
           ) : null}
           {Array.isArray(step.queries) && step.queries.length > 0 && (
-            <div className="-mx-2 px-2 overflow-x-auto">
+            <div className="-mx-2 px-2 overflow-x-auto scrollbar-none">
               <div className="flex items-center gap-2 py-1 w-max">
                 {step.queries.slice(0, 8).map((q: string, idx: number) => (
                   <span key={`q-${step.id || 'step'}-${idx}-${q}`} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground border border-border whitespace-nowrap">
@@ -630,6 +676,24 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
                     {q}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+          {step?.controls && (
+            <div className="-mx-2 px-2">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                {typeof step.controls.time_range === 'string' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 border border-border">time: {step.controls.time_range}</span>
+                )}
+                {typeof step.controls.country === 'string' && step.controls.country && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 border border-border">country: {step.controls.country.toUpperCase()}</span>
+                )}
+                {typeof step.controls.max_results === 'number' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 border border-border">max: {step.controls.max_results}</span>
+                )}
+                {typeof step.controls.autocorrect === 'boolean' && step.controls.autocorrect === false && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 border border-border">autocorrect: off</span>
+                )}
               </div>
             </div>
           )}
@@ -647,7 +711,7 @@ function StepCard({ step, isActive, collapsible = true }: { step: any; isActive:
   );
 
   return (
-    <li className="rounded-lg border bg-background">
+    <li className={cardClassName}>
       {collapsible ? (
         <Collapsible open={open} onOpenChange={setOpen}>
           {Header}
@@ -719,7 +783,7 @@ function Input({ inProgress, onSend, isVisible }: InputProps) {
                       toast.error('Please configure a model and Serper key in Settings.');
                       return;
                     }
-                    setState({ plan: { mode: "direct", steps: [] } as unknown as ResearchPlanTS, error: undefined, evidence: [] });
+                    setState({ plan: undefined, error: undefined, evidence: [] });
                     onSend(val);
                     setVal("");
                   }

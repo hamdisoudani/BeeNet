@@ -7,6 +7,13 @@ export type SearchResultTS = {
   score?: number;
 };
 
+export type PlanControlsTS = {
+  time_range?: "any" | "day" | "week" | "month" | "year";
+  country?: string;
+  autocorrect?: boolean;
+  max_results?: number;
+};
+
 export type PlanStepTS = {
   id: string;
   title: string;
@@ -14,11 +21,12 @@ export type PlanStepTS = {
   results: SearchResultTS[];
   status: PlanStepStatus;
   error?: { type?: string; message?: string; codes?: string[] };
+  controls?: PlanControlsTS;
 };
 
 export type ResearchPlanTS = {
   mode: "direct" | "search";
-  steps: Array<PlanStepTS | string>;
+  steps: PlanStepTS[];
   reason?: string;
   error?: { type?: string; message?: string; codes?: string[] };
 };

@@ -8,6 +8,7 @@ import Image from "next/image";
 import Logo from "@/public/logo.png";
 import { Moon, Sun, Plus, Settings, ArrowLeft, MoreHorizontal, Trash2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -101,93 +102,96 @@ export default function SidebarAppShell({ children }: { children: React.ReactNod
       <SidebarAutoCollapse />
       <div className="flex h-dvh w-full">
         <Sidebar>
-          <SidebarHeader className="px-3 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-3 whitespace-nowrap">
-                {/* Desktop back removed as requested */}
-                <Link href="/" aria-label="Home" className="inline-flex items-center">
-                  <Image src={Logo} alt="BeeNet" width={64} height={64} priority />
-                </Link>
-              </div>
-              {/* Desktop: Show collapse trigger, Mobile: Hide it */}
-              <SidebarTrigger className="hidden md:inline-flex h-8 w-8 shrink-0" aria-label="Toggle sidebar" />
-            </div>
-          </SidebarHeader>
+                     <SidebarHeader className="px-4 py-4 border-b border-border/30">
+             <div className="flex items-center justify-between gap-3">
+               <div className="flex items-center gap-3">
+                 <Link href="/" aria-label="Home" className="inline-flex items-center hover:opacity-80 transition-opacity">
+                   <Image src={Logo} alt="BeeNet" width={40} height={40} priority className="rounded-lg" />
+                 </Link>
+                 <div className="flex flex-col">
+                   <span className="font-semibold text-sm text-foreground">BeeNet</span>
+                   <span className="text-xs text-muted-foreground">AI Research</span>
+                 </div>
+               </div>
+               <SidebarTrigger className="hidden md:inline-flex h-8 w-8 shrink-0 hover:bg-muted/50 transition-colors rounded-md" aria-label="Toggle sidebar" />
+             </div>
+           </SidebarHeader>
           
           <SidebarContent className="flex flex-col flex-1 min-h-0">
             <div className="flex-shrink-0">
               <SecretsStatusBanner />
             </div>
             {/* Conversations taking remaining space */}
-            <SidebarGroup className="flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between px-3 py-2 w-full flex-shrink-0">
-                <SidebarGroupLabel className="text-xs font-medium text-muted-foreground">Conversations</SidebarGroupLabel>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 flex-shrink-0"
-                  onClick={handleNewChat}
-                  aria-label="New chat"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
+                         <SidebarGroup className="flex-1 flex flex-col min-h-0">
+               <div className="flex items-center justify-between px-4 py-3 w-full flex-shrink-0 border-b border-border/20">
+                 <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                   Conversations
+                 </SidebarGroupLabel>
+                 <Button
+                   variant="ghost"
+                   size="icon"
+                   className="h-7 w-7 flex-shrink-0 hover:bg-primary/10 hover:text-primary transition-all duration-200 rounded-md border border-transparent hover:border-primary/20"
+                   onClick={handleNewChat}
+                   aria-label="New chat"
+                 >
+                   <Plus className="h-4 w-4" />
+                 </Button>
+               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <ScrollArea className="h-full [&_[data-slot=scroll-area-scrollbar]]:hidden">
                 <SidebarMenu>
                   {loading && conversations.length === 0 && (
-                    <div className="px-3 py-1 space-y-2">
-                      <Skeleton className="h-6 w-[85%]" />
-                      <Skeleton className="h-6 w-[70%]" />
-                      <Skeleton className="h-6 w-[60%]" />
-                      <Skeleton className="h-6 w-[80%]" />
-                      <Skeleton className="h-6 w-[65%]" />
+                    <div className="px-4 py-3 space-y-3">
+                      <Skeleton className="h-10 w-[90%] rounded-lg" />
+                      <Skeleton className="h-10 w-[75%] rounded-lg" />
+                      <Skeleton className="h-10 w-[85%] rounded-lg" />
+                      <Skeleton className="h-10 w-[70%] rounded-lg" />
                     </div>
                   )}
                   {!loading && conversations.length === 0 && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton aria-disabled>Start a conversation…</SidebarMenuButton>
-                    </SidebarMenuItem>
+                    <div className="px-4 py-8">
+                      <div className="text-center text-sm text-muted-foreground bg-muted/30 rounded-xl py-8 px-4 border border-border/30">
+                        <div className="mb-3 text-2xl">💬</div>
+                        <div className="font-medium mb-2">No conversations yet</div>
+                        <div className="text-xs leading-relaxed">Start researching to create your first conversation</div>
+                      </div>
+                    </div>
                   )}
-                  <AnimatePresence initial={false} mode="wait">
-                  {!loading && conversations.map((c, index) => {
-                    const active = Boolean(pathname && pathname === `/c/${encodeURIComponent(c.threadId)}`);
-                    return (
-                      <motion.div key={`${c.threadId}-${index}`} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
-                        <SidebarMenuItem>
-                        <div className="group relative flex items-center gap-1 w-full px-2">
-                          {active && <div className="absolute left-1 top-1 bottom-1 w-1 rounded bg-primary" aria-hidden />}
-                          <SidebarMenuButton
-                            className={cn("flex-1 py-1.5", !active && "text-muted-foreground")}
-                            isActive={active}
-                            onClick={() => router.push(`/c/${encodeURIComponent(c.threadId)}`)}
-                          >
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={cn("truncate max-w-[180px] text-[13px]", active ? "font-semibold" : "font-medium")}>
-                                  {c.title || c.threadId}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" align="center">
-                                <div className="max-w-xs break-words">{c.title || c.threadId}</div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </SidebarMenuButton>
-                          <ConversationActions threadId={c.threadId} onDeleted={() => {
-                            // Optimistically remove and navigate home if viewing
-                            try {
-                              const path = pathname || '';
-                              if (path.startsWith(`/c/`) && path.includes(encodeURIComponent(c.threadId))) {
-                                router.push('/');
-                              }
-                            } catch {}
-                          }} />
-                        </div>
-                        </SidebarMenuItem>
-                      </motion.div>
-                    );
-                  })}
-                  </AnimatePresence>
+                                     {!loading && conversations.map((c) => {
+                     const active = Boolean(pathname && pathname === `/c/${encodeURIComponent(c.threadId)}`);
+                     return (
+                       <SidebarMenuItem key={c.threadId}>
+                         <div className="group relative flex items-center gap-1 w-full px-2 overflow-hidden">
+                           {active && <div className="absolute left-1 top-1 bottom-1 w-1 rounded bg-primary" aria-hidden />}
+                           <SidebarMenuButton
+                             className={cn("flex-1 py-1.5", !active && "text-muted-foreground")}
+                             isActive={active}
+                             onClick={() => router.push(`/c/${encodeURIComponent(c.threadId)}`)}
+                           >
+                             <Tooltip>
+                               <TooltipTrigger asChild>
+                                 <span className={cn("truncate max-w-[180px] text-[13px]", active ? "font-semibold" : "font-medium")}>
+                                   {c.title || c.threadId}
+                                 </span>
+                               </TooltipTrigger>
+                               <TooltipContent side="right" align="center">
+                                 <div className="max-w-xs break-words">{c.title || c.threadId}</div>
+                               </TooltipContent>
+                             </Tooltip>
+                           </SidebarMenuButton>
+                           <ConversationActions threadId={c.threadId} onDeleted={() => {
+                             // Optimistically remove and navigate home if viewing
+                             try {
+                               const path = pathname || '';
+                               if (path.startsWith(`/c/`) && path.includes(encodeURIComponent(c.threadId))) {
+                                 router.push('/');
+                               }
+                             } catch {}
+                           }} />
+                         </div>
+                       </SidebarMenuItem>
+                     );
+                   })}
                   {/* Infinite scroll sentinel */}
                   <SidebarMenuItem>
                     <IntersectionSentinel onVisible={() => loadMore()} />
@@ -201,37 +205,42 @@ export default function SidebarAppShell({ children }: { children: React.ReactNod
               <SidebarSeparator />
               
               {/* Navigation Links */}
-              <SidebarGroup>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link href="/settings">
-                        <Settings className="mr-2 h-4 w-4" />
-                        Settings
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroup>
+                              <SidebarGroup>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild className="mx-2 rounded-lg hover:bg-muted/60 transition-colors">
+                        <Link href="/settings" className="flex items-center gap-3 px-3 py-2.5">
+                          <Settings className="h-4 w-4" />
+                          <span className="text-sm font-medium">Settings</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroup>
             </div>
           </SidebarContent>
           
-          <SidebarFooter className="p-3 flex-shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
+          <SidebarFooter className="p-4 flex-shrink-0 border-t border-border/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <UserButton />
                 {!isLoaded ? (
-                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-4 w-20 rounded" />
                 ) : (
-                  <span className="text-xs text-muted-foreground">
-                    {user?.firstName || user?.username || "User"}
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-foreground truncate">
+                      {user?.firstName || user?.username || "User"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Free Plan
+                    </div>
+                  </div>
                 )}
               </div>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-9 w-9 hover:bg-muted/60 transition-colors rounded-lg flex-shrink-0"
                 onClick={() => setTheme(effectiveTheme === "dark" ? "light" : "dark")}
                 aria-label="Toggle theme"
               >
@@ -323,13 +332,13 @@ function ConversationActions({ threadId, onDeleted }: { threadId: string; onDele
     }
   }, [busy, threadId, onDeleted, refresh]);
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="h-8 w-8 inline-flex items-center justify-center rounded hover:bg-accent/50" aria-label="Actions">
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
-      </DropdownMenuTrigger>
+      return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-all duration-200 border border-transparent hover:border-border/50" aria-label="Actions">
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-40">
         <DropdownMenuItem onClick={handleDelete} disabled={busy} className="text-red-600">
           <Trash2 className="h-4 w-4 mr-2" /> Delete

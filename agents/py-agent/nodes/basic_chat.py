@@ -14,7 +14,7 @@ from brain.history import prepare_llm_context
 from prompts.chat_search_mode import build_chat_system_prompt_search
 from prompts.chat_direct_mode import build_chat_system_prompt_direct
 
-async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Literal["tool_node", "__end__"]]:
+async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Literal["__end__"]]:
 
     # 1. Define the model (use centralized model factory), passing config so header overrides are respected
     try:
@@ -142,6 +142,8 @@ async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Litera
         evidence = list(state.get("evidence", []))  # type: ignore[assignment]
     except Exception:
         evidence = []
+    
+    logger.info("Chat: processing with evidence_count=%d plan_mode=%s", len(evidence), plan_mode)
     if plan_mode == "search":
         # Build citations index and evidence sections
         citations_index: list[str] = []
@@ -179,6 +181,7 @@ async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Litera
                     header = f"Source [{marker}] — {u}" if isinstance(marker, int) else f"Source — {u}"
                     body = "\n\n".join(grouped.get(u, []))
                     evidence_sections.append(header + "\n" + body)
+                logger.info("Chat: processed evidence into %d sections with %d citations", len(evidence_sections), len(url_to_idx))
             except Exception:
                 pass
 
@@ -243,5 +246,5 @@ async def chat_node(state: AgentState, config: RunnableConfig) -> Command[Litera
     #         state["evidence"] = []  # type: ignore[index]
     # except Exception:
     #     pass
-    return Command(goto=END, update={"messages": response, "evidence": [], "plan": [], "error": None})
+    return Command(goto=END, update={"messages": response})
 
