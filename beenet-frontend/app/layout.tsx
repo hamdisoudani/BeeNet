@@ -7,6 +7,7 @@ import { ConversationsProvider } from "@/context/conversations";
 import SidebarAppShell from "@/components/SidebarAppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { ClerkReady } from "@/components/ClerkReady";
 //import { Analytics } from "@vercel/analytics/next";
 //import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -39,9 +40,11 @@ export default function RootLayout({
       >
         <Providers>
           <SignedIn>
-            <ConversationsProvider>
-              <SidebarAppShell>{children}</SidebarAppShell>
-            </ConversationsProvider>
+            <ClerkReady>
+              <ConversationsProvider>
+                <SidebarAppShell>{children}</SidebarAppShell>
+              </ConversationsProvider>
+            </ClerkReady>
           </SignedIn>
           <SignedOut>
             {children}

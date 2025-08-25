@@ -20,8 +20,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 
 function StatusBootstrap() {
+  const { isLoaded } = useAuth();
   const { setStatus, setStatusLoading, setStatusError } = useModelStore();
   React.useEffect(() => {
+    if (!isLoaded) return;
     (async () => {
       try {
         setStatusLoading(true);
@@ -33,7 +35,7 @@ function StatusBootstrap() {
       } catch {}
       finally { setStatusLoading(false); }
     })();
-  }, [setStatus, setStatusLoading, setStatusError]);
+  }, [isLoaded, setStatus, setStatusLoading, setStatusError]);
   return null;
 }
 
