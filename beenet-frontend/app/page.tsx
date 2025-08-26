@@ -19,6 +19,8 @@ import { Send, Paperclip, Sparkles, ChevronUp, ChevronDown } from "lucide-react"
 import { GooeyText } from "@/components/ui/gooey-text";
 import { HeroGeometric } from "@/components/ui/hero-geometric";
 import { Features } from "@/components/ui/features";
+import { ShaderHero } from "@/components/ui/shader-hero";
+import { GlobalShaderBackground } from "@/components/ui/global-shader-background";
 
 export default function Home() {
   return (
@@ -85,7 +87,8 @@ function Landing() {
   }, [sections]);
 
   return (
-    <main className="overflow-x-hidden snap-y snap-mandatory h-screen overflow-y-scroll scrollbar-hide">
+    <GlobalShaderBackground variant="hero" intensity="medium">
+      <main className="overflow-x-hidden snap-y snap-mandatory h-screen overflow-y-scroll scrollbar-hide">
       {/* Section Navigation Dots */}
       <div className="fixed right-4 md:right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3">
         {sections.map((section, index) => (
@@ -108,170 +111,91 @@ function Landing() {
         ))}
       </div>
 
-      {/* Hero Section - Full Screen */}
-      <section id="hero" className="h-screen snap-start relative overflow-hidden flex flex-col">
-        {/* Navigation */}
-        <nav className="relative z-50 bg-transparent">
-          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Image src={Logo} alt="BeeNet" width={32} height={32} priority />
-              <span className="text-lg font-bold">BeeNet</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <SignInButton mode="modal">
-                <Button variant="ghost" size="sm">Sign in</Button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <Button size="sm">Get Started</Button>
-              </SignUpButton>
-            </div>
-          </div>
-        </nav>
-
-        <HeroGeometric>
-          <div className="text-center flex-1 flex flex-col justify-center min-h-0">
-            {/* Main Hero Title */}
-            <div className="mb-6">
-              <h1 className="text-3xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4">
-                <span className="block bg-gradient-to-r from-primary via-foreground to-accent bg-clip-text text-transparent">
-                  Your AI Research
-                </span>
-                <span className="block bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent">
-                  Without Limits
-                </span>
-              </h1>
-            </div>
-            
-            <p className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed px-4">
-              Unlike Perplexity's restrictions, BeeNet gives you unlimited research with your own API keys, 
-              custom models, and enterprise-grade security.
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 mb-8">
-              <SignUpButton mode="modal">
-                <Button size="lg" className="text-lg px-8 py-4 rounded-full">
-                  Start Free Research
-                  <Sparkles className="ml-2 h-5 w-5" />
-                </Button>
-              </SignUpButton>
-              <SignInButton mode="modal">
-                <Button size="lg" variant="outline" className="text-lg px-8 py-4 rounded-full">
-                  Sign In
-                </Button>
-              </SignInButton>
-            </div>
-
-            {/* Trust indicators */}
-            <div className="flex flex-wrap items-center justify-center gap-4 md:gap-6 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2 bg-background/20 backdrop-blur-sm rounded-full px-3 py-1">
-                <span className="h-2 w-2 rounded-full bg-green-500" />
-                Bank-grade encryption
-              </div>
-              <div className="flex items-center gap-2 bg-background/20 backdrop-blur-sm rounded-full px-3 py-1">
-                <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Your own API keys
-              </div>
-              <div className="flex items-center gap-2 bg-background/20 backdrop-blur-sm rounded-full px-3 py-1">
-                <span className="h-2 w-2 rounded-full bg-purple-500" />
-                Unlimited searches
-              </div>
-            </div>
-
-            {/* Animated Scroll Down Arrow */}
-            <div className="mt-auto pb-8 flex flex-col items-center gap-2 z-30">
-              <span className="text-sm text-muted-foreground hidden md:block">Scroll to explore</span>
-              <button 
-                onClick={() => scrollToSection(1)}
-                className="group flex flex-col items-center gap-1 p-2 rounded-full hover:bg-background/20 transition-all duration-300"
-                aria-label="Scroll to next section"
-              >
-                <ChevronDown className="h-6 w-6 text-muted-foreground group-hover:text-primary animate-bounce" />
-              </button>
-            </div>
-          </div>
-        </HeroGeometric>
+      {/* Hero Section - Shader Experience */}
+      <section id="hero" className="h-screen snap-start relative overflow-hidden">
+        <ShaderHero scrollToSection={scrollToSection} />
       </section>
 
       {/* Comparison Section - Fixed height and centering */}
-      <section id="comparison" className="h-screen snap-start flex items-center justify-center bg-muted/5 relative overflow-auto">
+      <section id="comparison" className="h-screen snap-start flex items-center justify-center relative overflow-auto">
         <div className="container mx-auto px-4 md:px-6 lg:px-8 max-w-6xl py-8 md:py-12">
           <div className="text-center mb-6 md:mb-8">
-            <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold mb-3 md:mb-4 bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+            <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold mb-3 md:mb-4 bg-gradient-to-r from-white to-amber-200 bg-clip-text text-transparent" style={{ filter: "drop-shadow(0 0 20px rgba(0,0,0,0.8))" }}>
               Why Choose BeeNet?
             </h2>
-            <p className="text-sm md:text-base lg:text-lg text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-sm md:text-base lg:text-lg text-white/70 max-w-2xl mx-auto" style={{ filter: "drop-shadow(0 0 15px rgba(0,0,0,0.8))" }}>
               See how we compare to other AI research platforms
             </p>
           </div>
           
           <div className="grid md:grid-cols-2 gap-4 md:gap-6 lg:gap-8">
             {/* Perplexity Column */}
-            <div className="bg-muted/30 rounded-lg md:rounded-xl p-3 md:p-4 lg:p-5 border relative overflow-hidden">
+            <div className="bg-white/10 backdrop-blur-lg rounded-lg md:rounded-xl p-3 md:p-4 lg:p-5 border border-white/20 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-20 h-20 md:w-24 md:h-24 bg-red-500/5 rounded-full -translate-y-10 translate-x-10 md:-translate-y-12 md:translate-x-12" />
               
               <div className="flex items-center gap-2 mb-3 md:mb-4">
                 <div className="w-7 h-7 md:w-8 md:h-8 bg-muted rounded-lg flex items-center justify-center">
                   <span className="text-base md:text-lg">🔒</span>
                 </div>
-                <h3 className="text-base md:text-lg font-semibold text-muted-foreground">Perplexity & Others</h3>
+                <h3 className="text-base md:text-lg font-semibold text-white/80">Perplexity & Others</h3>
               </div>
               
               <ul className="space-y-2 md:space-y-3">
                 <li className="flex items-start gap-2">
                   <span className="text-red-500 mt-0.5 text-sm md:text-base">❌</span>
-                  <span className="text-xs md:text-sm">Limited to 5-20 searches per month</span>
+                  <span className="text-xs md:text-sm text-white/70">Limited to 5-20 searches per month</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-500 mt-0.5 text-sm md:text-base">❌</span>
-                  <span className="text-xs md:text-sm">No custom model selection</span>
+                  <span className="text-xs md:text-sm text-white/70">No custom model selection</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-500 mt-0.5 text-sm md:text-base">❌</span>
-                  <span className="text-xs md:text-sm">Expensive monthly subscriptions</span>
+                  <span className="text-xs md:text-sm text-white/70">Expensive monthly subscriptions</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-500 mt-0.5 text-sm md:text-base">❌</span>
-                  <span className="text-xs md:text-sm">Your data used for training</span>
+                  <span className="text-xs md:text-sm text-white/70">Your data used for training</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-500 mt-0.5 text-sm md:text-base">❌</span>
-                  <span className="text-xs md:text-sm">No control over API costs</span>
+                  <span className="text-xs md:text-sm text-white/70">No control over API costs</span>
                 </li>
               </ul>
             </div>
 
             {/* BeeNet Column */}
-            <div className="bg-primary/5 rounded-lg md:rounded-xl p-3 md:p-4 lg:p-5 border border-primary/20 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-20 h-20 md:w-24 md:h-24 bg-primary/10 rounded-full -translate-y-10 translate-x-10 md:-translate-y-12 md:translate-x-12" />
-              <div className="absolute top-2 right-2 bg-primary text-primary-foreground px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs font-medium">
+            <div className="bg-gradient-to-br from-amber-500/20 to-orange-500/20 backdrop-blur-lg rounded-lg md:rounded-xl p-3 md:p-4 lg:p-5 border border-amber-400/30 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-20 h-20 md:w-24 md:h-24 bg-amber-400/20 rounded-full -translate-y-10 translate-x-10 md:-translate-y-12 md:translate-x-12" />
+              <div className="absolute top-2 right-2 bg-gradient-to-r from-amber-400 to-orange-500 text-black px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs font-medium">
                 Better Choice
               </div>
               
               <div className="flex items-center gap-2 mb-3 md:mb-4">
                 <Image src={Logo} alt="BeeNet" width={28} height={28} className="md:w-8 md:h-8" />
-                <h3 className="text-base md:text-lg font-semibold text-primary">BeeNet</h3>
+                <h3 className="text-base md:text-lg font-semibold text-amber-200">BeeNet</h3>
               </div>
               
               <ul className="space-y-2 md:space-y-3">
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
-                  <span className="text-xs md:text-sm"><strong>Unlimited</strong> research with your Serper key</span>
+                  <span className="text-xs md:text-sm text-white/90"><strong className="text-amber-200">Unlimited</strong> research with your Serper key</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
-                  <span className="text-xs md:text-sm"><strong>Choose any model:</strong> GPT-4, Claude, Llama, Groq</span>
+                  <span className="text-xs md:text-sm text-white/90"><strong className="text-amber-200">Choose any model:</strong> GPT-4, Claude, Llama, Groq</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
-                  <span className="text-xs md:text-sm"><strong>Pay only</strong> for what you use</span>
+                  <span className="text-xs md:text-sm text-white/90"><strong className="text-amber-200">Pay only</strong> for what you use</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
-                  <span className="text-xs md:text-sm"><strong>Your data stays private</strong> - never used for training</span>
+                  <span className="text-xs md:text-sm text-white/90"><strong className="text-amber-200">Your data stays private</strong> - never used for training</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-500 mt-0.5 text-sm md:text-base">✅</span>
-                  <span className="text-xs md:text-sm"><strong>Full transparency</strong> on API usage & costs</span>
+                  <span className="text-xs md:text-sm text-white/90"><strong className="text-amber-200">Full transparency</strong> on API usage & costs</span>
                 </li>
               </ul>
             </div>
@@ -280,13 +204,13 @@ function Landing() {
       </section>
 
       {/* Security Section - Optimized */}
-      <section id="security" className="h-screen snap-start flex items-center justify-center bg-gradient-to-br from-background via-muted/5 to-background relative overflow-auto">
+      <section id="security" className="h-screen snap-start flex items-center justify-center relative overflow-auto">
         <div className="container mx-auto px-4 md:px-6 lg:px-8 text-center max-w-6xl py-8 md:py-12">
           <div className="mb-6 md:mb-8">
-            <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold mb-3 md:mb-4 bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+            <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold mb-3 md:mb-4 bg-gradient-to-r from-white to-amber-200 bg-clip-text text-transparent" style={{ filter: "drop-shadow(0 0 20px rgba(0,0,0,0.8))" }}>
               Enterprise-Grade Security
             </h2>
-            <p className="text-sm md:text-base lg:text-lg text-muted-foreground max-w-3xl mx-auto">
+            <p className="text-sm md:text-base lg:text-lg text-white/70 max-w-3xl mx-auto" style={{ filter: "drop-shadow(0 0 15px rgba(0,0,0,0.8))" }}>
               Your API keys and data are protected with military-grade encryption techniques
             </p>
           </div>
@@ -334,10 +258,10 @@ function Landing() {
       <section id="cta" className="h-screen snap-start flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 relative overflow-auto">
         <div className="container mx-auto px-4 md:px-6 lg:px-8 text-center max-w-4xl py-8 md:py-12">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold mb-4 md:mb-6 bg-gradient-to-r from-primary via-foreground to-accent bg-clip-text text-transparent">
+            <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold mb-4 md:mb-6 bg-gradient-to-r from-white to-amber-200 bg-clip-text text-transparent" style={{ filter: "drop-shadow(0 0 20px rgba(0,0,0,0.8))" }}>
               Ready to Research Without Limits?
             </h2>
-            <p className="text-sm md:text-base lg:text-lg text-muted-foreground mb-6 md:mb-8 max-w-2xl mx-auto">
+            <p className="text-sm md:text-base lg:text-lg text-white/70 mb-6 md:mb-8 max-w-2xl mx-auto" style={{ filter: "drop-shadow(0 0 15px rgba(0,0,0,0.8))" }}>
               Join thousands of researchers, developers, and professionals who've made the switch to BeeNet
             </p>
             
@@ -357,6 +281,7 @@ function Landing() {
         </div>
       </section>
     </main>
+    </GlobalShaderBackground>
   );
 }
 
