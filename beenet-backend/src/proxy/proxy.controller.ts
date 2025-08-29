@@ -252,6 +252,7 @@ export class ProxyController {
         assistantIsFinal?: boolean;
         seenLCStream?: boolean;
         assistantId?: string;
+        agentErrored?: boolean;
       } = { userId: authUserId, assistantText: '', sseBuffer: '' } as any;
       try {
         if (isExecute && authUserId) {
@@ -318,7 +319,6 @@ export class ProxyController {
             persistContext.sseBuffer = parts.pop() || '';
             for (const raw of parts) {
               const line = raw.trim();
-              console.log("line", line);
               if (!line) continue;
               let payload: string | undefined;
               if (line.startsWith('data:')) {
@@ -352,7 +352,18 @@ export class ProxyController {
                 }
                 // Event-based envelopes (LangChain/LangGraph)
                 const evtName: string | undefined = (evt?.event as string) || undefined;
-                if (evtName === 'on_copilotkit_state_sync') {
+                if (evtName === 'on_chain_error' || evtName === 'on_tool_error' || evtName === 'on_llm_error') {
+                  try {
+                    this.logger.warn({
+                      event: 'agent_error_event_received',
+                      eventName: evtName,
+                      userId: persistContext.userId,
+                      threadId: persistContext.threadId,
+                      turnId: persistContext.turnId,
+                    });
+                  } catch {}
+                  persistContext.agentErrored = true;
+                } else if (evtName === 'on_copilotkit_state_sync') {
                   const st = (evt as any).state;
                   if (st) {
                     persistContext.stateSnapshot = st;
@@ -462,8 +473,11 @@ export class ProxyController {
                   createdCount += 1;
                 }
                 // Ensure assistant text is non-empty; if empty, try to derive from state snapshot
+                const errored = !!persistContext.agentErrored;
                 let finalAssistantText = (persistContext.assistantText || '').trim();
-                if (!finalAssistantText && persistContext.stateSnapshot) {
+                if (errored) {
+                  finalAssistantText = '';
+                } else if (!finalAssistantText && persistContext.stateSnapshot) {
                   try {
                     const msgs = Array.isArray(persistContext.stateSnapshot?.messages) ? persistContext.stateSnapshot.messages : [];
                     const lastAssistant = [...msgs].reverse().find((m: any) => (m?.role || m?.sender) === 'assistant');
@@ -471,7 +485,7 @@ export class ProxyController {
                     if (typeof lastContent === 'string') finalAssistantText = lastContent.trim();
                   } catch {}
                 }
-                if (finalAssistantText) {
+                if (finalAssistantText || errored) {
                   await this.svc.persistAssistantText({
                     userId: persistContext.userId!,
                     conversationId: persistContext.conversationId!,
