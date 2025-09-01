@@ -1,99 +1,80 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Beenet Backend - Developer's Guide
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+This document provides a deep dive into the Beenet backend for developers. The backend is a [NestJS](https://nestjs.com/) application that serves as a secure proxy and persistence layer for the Beenet agentic chat application.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+For setup and installation instructions, please see the [main README](../../README.md).
 
-## Description
+## 🛡️ Role and Responsibilities
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+The backend has several critical responsibilities:
 
-## Project setup
+1.  **Secure Proxy:** It acts as a secure intermediary between the frontend and the Python agent. All requests to the agent are routed through this backend.
+2.  **Authentication:** It uses [Clerk](https://clerk.com/) to protect all its endpoints, ensuring that only authenticated users can access the application.
+3.  **Persistence:** It connects to a MongoDB database to save and retrieve user data, including conversations, messages, and secrets.
+4.  **Secrets Management:** It securely manages user-provided API keys (e.g., for LLM providers and Tavily), encrypting them at rest before storing them in the database.
+5.  **Configuration Injection:** It injects the necessary API keys and other configuration into the requests it forwards to the Python agent, so the agent itself doesn't need to handle user-specific secrets.
 
-```bash
-$ npm install
-```
+## 🏗️ Architecture & Modules
 
-## Compile and run the project
+The backend is built with a modular architecture, with each module handling a specific concern:
 
-```bash
-# development
-$ npm run start
+-   **`AppModule`**: The root module of the application.
+-   **`ProxyModule`**: Contains the `ProxyController`, which handles all requests prefixed with `/copilotkit`. It forwards these requests to the Python agent, adding authentication and necessary headers.
+-   **`SecretsModule`**: Manages user secrets, including API keys. It provides endpoints for creating, reading, updating, and deleting secrets.
+-   **`MessagesModule`**: Handles the persistence of conversations and messages.
+-   **`AuthModule`**: Contains the `ClerkAuthGuard`, which is used to protect routes.
 
-# watch mode
-$ npm run start:dev
+## 🔌 API Endpoints
 
-# production mode
-$ npm run start:prod
-```
+All endpoints are prefixed with `/api`. Here are the main custom endpoints:
 
-## Run tests
+-   `GET /api/secrets`: Get the current user's secrets (models and Tavily key status).
+-   `PUT /api/secrets`: Upsert a model for the current user.
+-   `PUT /api/secrets/default`: Set the default model for the current user.
+-   `PUT /api/secrets/tavily`: Save the Tavily API key for the current user.
+-   `POST /api/secrets/tavily/remove`: Remove the Tavily API key for the current user.
+-   `POST /api/conversations/init`: Initialize a new conversation.
+-   `GET /api/conversations`: Get all conversations for the current user.
+-   `POST /api/messages/turn`: Save a turn (user message, agent state, assistant message) to the database.
+-   `GET /api/messages?threadId=...`: Get all messages for a specific conversation.
 
-```bash
-# unit tests
-$ npm run test
+In addition to these, the `ProxyController` handles all requests to `/copilotkit*` and forwards them to the Python agent.
 
-# e2e tests
-$ npm run test:e2e
+## 💾 Database Schema
 
-# test coverage
-$ npm run test:cov
-```
+The backend uses Mongoose to interact with a MongoDB database. The schemas are defined in the `src/schemas/` directory.
 
-## Deployment
+-   **`user-secrets.schema.ts`**: Stores user-specific secrets.
+    -   `userId`: The Clerk user ID.
+    -   `models`: An array of subdocuments, each containing a user's model configuration (`name`, `baseUrl`, `apiKeyEnc`, etc.).
+    -   `tavilyApiKeyEnc`: The user's encrypted Tavily API key.
+-   **`conversation.schema.ts`**: Stores metadata for each conversation.
+    -   `userId`: The Clerk user ID.
+    -   `threadId`: The unique ID for the conversation thread.
+    -   `title`: The title of the conversation.
+-   **`message.schema.ts`**: Stores each message in a conversation.
+    -   `userId`: The Clerk user ID.
+    -   `conversationId`: The ID of the conversation this message belongs to.
+    -   `turnId`: An ID that groups a user message, agent state, and assistant response together.
+    -   `role`: The role of the message sender (`user`, `assistant`, or `agent_state`).
+    -   `content`: The content of the message.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## 🔐 Security Features
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+-   **Authentication:** All routes are protected by the `ClerkAuthGuard`, which validates the JWT from the `__session` cookie or the `Authorization` header.
+-   **Encryption at Rest:** API keys in the `user_secrets` collection are encrypted using AES-256-GCM. The encryption key is provided via the `DATA_KEY` environment variable.
+-   **HMAC Signing:** Requests from the backend to the Python agent are signed with an HMAC signature. The agent verifies this signature to ensure that requests are coming from a trusted source. The shared secret is provided via the `PROXY_SHARED_SECRET` environment variable.
+-   **CORS:** Cross-Origin Resource Sharing is configured to only allow requests from the frontend's origin.
+-   **Rate Limiting:** The application has a global rate limiter, with stricter limits on sensitive endpoints.
 
-```bash
-$ npm install -g mau
-$ mau deploy
-```
+## ⚙️ Environment Variables
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The backend is configured via environment variables in a `.env` file.
 
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+-   `PORT`: The port for the server to run on.
+-   `FRONTEND_ORIGIN`: The URL of the frontend application.
+-   `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`: Your Clerk API keys.
+-   `MONGODB_URI`: The connection string for your MongoDB database.
+-   `AGENT_URL`: The URL of the Python agent's CopilotKit endpoint.
+-   `DATA_KEY`: A 32-byte base64 encoded string for data encryption.
+-   `PROXY_SHARED_SECRET`: A shared secret for HMAC signing of requests to the agent.

@@ -1,61 +1,66 @@
-## Beenet Frontend
+# Beenet Frontend - Developer's Guide
 
-A Next.js App Router UI tailored for the Beenet agent. It proxies to the backend CopilotKit endpoint and renders agent state inline as the backend streams updates.
+This document provides a deep dive into the Beenet frontend for developers. For setup and installation instructions, please see the [main README](../../README.md).
 
-### Run locally
+## 🚀 Architecture & Tech Stack
 
-```bash
-npm install
-npm run dev
-# http://localhost:3000
-```
+The frontend is a [Next.js](https://nextjs.org/) application built with the App Router. It uses [TypeScript](https://www.typescriptlang.org/) for type safety and is styled with [Tailwind CSS](https://tailwindcss.com/) and [shadcn/ui](https://ui.shadcn.com/).
 
-### Configuration
+The core of the chat functionality is powered by [CopilotKit](https://www.copilotkit.ai/), which manages the communication with the backend and the rendering of the agent's state.
 
-- `app/layout.tsx` wraps the app with CopilotKit and sets:
-  - `publicLicenseKey`: public key for headless chat hooks
-  - `runtimeUrl`: `/api/copilotkit` (proxy to backend)
-  - `agent`: `starterAgent`
+## 📂 Key Directories & Files
 
-### Key components
+-   `app/`: The main directory for the Next.js App Router.
+    -   `app/(auth)/`: Contains the sign-in and sign-up pages provided by Clerk.
+    -   `app/api/`: Contains API routes that proxy requests to the NestJS backend. This is crucial for keeping secrets off the client.
+    -   `app/c/[id]/`: The main chat interface page. The `[id]` is the conversation/thread ID.
+    -   `app/layout.tsx`: The root layout of the application. It wraps the app in necessary providers like `ClerkProvider`, `ThemeProvider`, and `CopilotKit`.
+    -   `app/page.tsx`: The landing page for the application.
+-   `components/`: Contains all the React components.
+    -   `components/chat/CustomChat.tsx`: The main chat component. It orchestrates the entire chat experience, including message display, input, and plan rendering.
+    -   `components/plan/PlanPanel.tsx`: The component responsible for rendering the agent's plan and progress as it streams from the backend.
+    -   `components/ui/`: Contains the UI components from shadcn/ui.
+-   `context/`: Contains React context providers.
+-   `stores/`: Contains Zustand stores for client-side state management (e.g., `pendingTurn.ts`).
+-   `lib/`: Contains utility functions.
 
-- `components/chat/CustomChat.tsx`
-  - Uses headless chat hooks; persists messages to `localStorage`
-  - Streams plan updates inline via `useCoAgentStateRender`
-  - Displays each plan step with status, queries, and a grid of live source cards (favicon, title, domain)
-  - Custom Assistant message with: copy + regenerate actions, separators between turns, and rich markdown rendering
+## 🤖 State Management
 
-### UI/Markdown rendering
+State management is handled by a combination of tools:
 
-This project uses `react-markdown` with a curated plugin set and shadcn/ui mappings for a professional look:
+-   **CopilotKit**: Manages the core agent state, including the message history, the agent's plan, and the connection to the backend. It provides hooks like `useCopilotAction` and `useCoAgentStateRender`.
+-   **Zustand**: Used for small pieces of client-side state that are not directly related to the agent, such as managing a pending message when navigating from the landing page to the chat page.
+-   **React Context**: Used for providing global state, such as the current theme.
 
-- remark: `remark-gfm`, `remark-breaks`, `remark-math`, `remark-smartypants`
-- rehype: `rehype-raw` (paired with `rehype-sanitize`), `rehype-slug`, `rehype-external-links`, `rehype-highlight`, `rehype-katex`
-- Component mappings: tables → shadcn `Table` components, inline/blocks of code with copy button, styled blockquotes, headings, lists, and horizontal rules
+## 🎨 UI & Styling
 
-Math typesetting (KaTeX) CSS is required at runtime. Import it once in your app entry:
+-   **shadcn/ui**: Provides the core set of accessible and composable UI components.
+-   **Tailwind CSS**: Used for all custom styling.
+-   **`react-markdown`**: Used to render the agent's responses, which are formatted in Markdown. It is configured with a rich set of plugins for features like tables (GFM), math (KaTeX), and syntax highlighting.
+-   **Framer Motion**: Used for animations, such as the sidebar collapse/expand effect.
 
-```ts
-// app/layout.tsx (or a global styles entry)
-import "katex/dist/katex.min.css";
-```
+### Markdown Rendering
 
-> Note: No provider URLs, API keys, or model names are hardcoded here. Configure those via environment variables in your own deployment.
+The Markdown rendering pipeline is configured in `components/chat/CustomChat.tsx` and supports:
+-   GitHub Flavored Markdown (tables, strikethrough, etc.)
+-   KaTeX for mathematical formulas.
+-   Syntax highlighting for code blocks.
+-   Custom components for elements like tables and code blocks to match the application's design system.
 
-### API proxy
+## 🔌 API Interaction
 
-- `app/api/copilotkit/route.ts` bridges the UI to the Python agent endpoint.
+The frontend **does not** communicate directly with the Python agent. Instead, it interacts with the NestJS backend in two ways:
 
-### Notes
+1.  **CopilotKit Runtime:** The `CopilotKit` provider is configured with a `runtimeUrl` that points to `/api/copilotkit`. This Next.js API route (`app/api/copilotkit/route.ts`) acts as a proxy, forwarding all CopilotKit-related traffic to the NestJS backend. This is the primary communication channel for the agent.
+2.  **Standard API Routes:** For other backend operations, such as managing secrets or conversations, the frontend calls other Next.js API routes (e.g., `/api/secrets`). These routes then make authenticated requests to the NestJS backend.
 
-- Messages are persisted in `localStorage` under `beenet.chat.messages` for basic session restore.
-- Plan rendering is resilient to partial updates; result cards stream in as queries complete.
+This proxy-based approach ensures that no sensitive information, such as API keys or other secrets, is ever exposed to the client.
 
-### Dependencies added for markdown/UX
+## ⚙️ Environment Variables
 
-Install the following packages if you customize or recreate the setup:
+The frontend is configured via environment variables in a `.env.local` file.
 
-```bash
-npm i react-markdown remark-gfm remark-breaks remark-math remark-smartypants \
-  rehype-raw rehype-sanitize rehype-slug rehype-external-links rehype-highlight rehype-katex katex
-```
+-   `NEXT_PUBLIC_BACKEND_URL`: The public URL of the NestJS backend.
+-   `NEXT_PUBLIC_COPILOTKIT_RUNTIME_URL`: The URL for the CopilotKit runtime, which points to the backend proxy.
+-   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`: The publishable key for your Clerk application.
+-   `CLERK_SECRET_KEY`: The secret key for your Clerk application, used for backend operations within the Next.js app.
