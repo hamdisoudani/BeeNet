@@ -18,19 +18,18 @@ export class ClerkAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('Missing authentication token');
 
     try {
-      const jwtKey = process.env.CLERK_JWT_KEY; // optional PEM public key
-      const secretKey = process.env.CLERK_SECRET_KEY; // secret key fallback
+      const jwtKey = process.env.CLERK_JWT_KEY;
       const origin = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+      
+      if (!jwtKey || jwtKey.trim().length === 0) {
+        throw new Error('CLERK_JWT_KEY environment variable is required for token verification');
+      }
+      
       const options: any = {
+        jwtKey: jwtKey,
         authorizedParties: [origin],
       };
-      if (jwtKey && jwtKey.trim().length > 0) {
-        options.jwtKey = jwtKey;
-      } else if (secretKey && secretKey.trim().length > 0) {
-        options.secretKey = secretKey;
-      } else {
-        throw new Error('Missing Clerk verification key');
-      }
+      
       const verified: any = await verifyToken(token, options);
       req.auth = { userId: verified?.sub };
       return true;
@@ -39,7 +38,3 @@ export class ClerkAuthGuard implements CanActivate {
     }
   }
 }
-
-
-
-
