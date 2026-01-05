@@ -15,6 +15,9 @@ from copilotkit.integrations.fastapi import add_fastapi_endpoint
 from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
 from brain.graph import graph
 from middleware import ProxyAuthAndModelMiddleware
+from copilotkit import CopilotKitRemoteEndpoint, LangGraphAGUIAgent
+from brain.graph import graph
+from middleware import ProxyAuthAndModelMiddleware
 
 
 app = FastAPI()
@@ -29,7 +32,7 @@ app.add_middleware(
 app.add_middleware(ProxyAuthAndModelMiddleware)
 sdk = CopilotKitRemoteEndpoint(
     agents=[
-        LangGraphAgent(
+        LangGraphAGUIAgent(
             name="starterAgent",
             description="An example agent to use as a starting point for your own agent.",
             graph=graph,

@@ -19,7 +19,7 @@ export class ProxyController {
   }
 
   @UseGuards(ClerkAuthGuard)
-  @All('copilotkit*')
+  @All('copilotkit/*path')
   async proxy(@Req() req: Request, @Res() res: ExpressResponse) {
     const base = process.env.AGENT_URL || 'http://localhost:8000/copilotkit';
     const original = (req.originalUrl || req.url) as string;
