@@ -7,7 +7,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppLogger } from './common/logger.service';
-import { ProxyModule } from './proxy/proxy.module';
 import { SecretsModule } from './secrets/secrets.module';
 import { MessagesModule } from './messages/messages.module';
 
@@ -17,7 +16,6 @@ import { MessagesModule } from './messages/messages.module';
     CacheModule.register({ isGlobal: true, ttl: 60, max: 500 }),
     ThrottlerModule.forRoot([{ ttl: 60, limit: 60 }]),
     MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/beenet'),
-    ProxyModule,
     SecretsModule,
     MessagesModule,
   ],
