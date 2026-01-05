@@ -38,14 +38,9 @@ class ProxyAuthAndModelMiddleware(BaseHTTPMiddleware):
             try:
                 # In production, verify signature with Clerk keys
                 payload = jwt.decode(token, options={"verify_signature": False})
-
-                # IMPORTANT: Attach user info to request state so CopilotKit or LangGraph can access it
-                # CopilotKit might read request.state or context vars.
-                # For LangGraph integration in CopilotKit, passing via request state is a common pattern.
-                request.state.user = payload
-                request.state.user_id = payload.get("sub")
-
-                logger.debug("auth_success user_id=%s", request.state.user_id)
+                # Set user context?
+                # For now, just logging validity
+                pass
             except Exception as e:
                 logger.warning("auth_invalid error=%s", str(e))
                 return Response(status_code=401, content="Invalid token")
