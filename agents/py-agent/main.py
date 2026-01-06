@@ -18,40 +18,35 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from contextlib import asynccontextmanager
 from psycopg_pool import AsyncConnectionPool
 
-# Global checkpointer variable
-checkpointer = None
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global checkpointer
     # Initialize Postgres checkpointer
     async with AsyncConnectionPool(
         conninfo=DB_URI,
         max_size=20,
         kwargs={"autocommit": True, "prepare_threshold": 0},
     ) as pool:
-        cp = AsyncPostgresSaver(pool)
-        await cp.setup()
-        checkpointer = cp
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
 
-        # We need to re-compile the graph with the checkpointer here if we want persistence.
-        # However, add_langgraph_fastapi_endpoint is called at module level.
-        # This is a circular dependency problem with the current pattern.
-        #
-        # If we must use add_langgraph_fastapi_endpoint at module level, the graph must be ready.
-        # But AsyncPostgresSaver requires async setup.
-        #
-        # Workaround: For now, we use the globally compiled graph (MemorySaver or None) from brain.graph
-        # for the definition, OR we rely on the fact that LangGraphAGUIAgent might accept a graph factory?
-        # No, it takes a compiled graph.
-        #
-        # For the purpose of this task (switching to AG-UI pattern), I will use the workflow
-        # compiled WITHOUT checkpointer in the global scope (from brain.graph import graph),
-        # unless I can find a way to inject it.
-        #
-        # Note: If persistence is critical, we might need a sync Checkpointer or a different startup pattern.
-        # But given the strict request for the code structure, I will proceed with the global graph.
-        # The lifespan will still run, but might not attach the checkpointer to the ALREADY compiled graph.
+        # Compile graph with persistence
+        graph = workflow.compile(checkpointer=checkpointer)
+
+        # Initialize Agent with persistent graph
+        agent = LangGraphAGUIAgent(
+            name="starterAgent",
+            description="An example agent to use as a starting point for your own agent.",
+            graph=graph,
+        )
+
+        # Register the endpoint dynamically
+        # Note: add_langgraph_fastapi_endpoint typically adds routes to the app.
+        # Calling it here ensures it uses the ready graph.
+        add_langgraph_fastapi_endpoint(
+            app=app,
+            agent=agent,
+            path="/",
+        )
 
         yield
 
@@ -66,20 +61,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(ProxyAuthAndModelMiddleware)
-
-# Compile graph globally (likely without persistence for now, unless brain.graph handles it)
-# We import 'graph' from brain.graph which is 'workflow.compile()'
-from brain.graph import graph
-
-add_langgraph_fastapi_endpoint(
-  app=app,
-  agent=LangGraphAGUIAgent(
-    name="starterAgent",
-    description="An example agent to use as a starting point for your own agent.",
-    graph=graph,
-  ),
-  path="/",
-)
 
 def main():
     """Run the uvicorn server."""
