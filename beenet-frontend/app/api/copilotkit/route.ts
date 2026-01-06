@@ -15,7 +15,7 @@ const serviceAdapter = new ExperimentalEmptyAdapter();
 const runtime = new CopilotRuntime({
   agents: {
     starterAgent: new LangGraphHttpAgent({
-      url: process.env.REMOTE_ACTION_URL || "http://localhost:8000",
+      url: process.env.NEXT_PUBLIC_COPILOTKIT_RUNTIME_URL || "http://localhost:8000",
     }),
   },
 });
