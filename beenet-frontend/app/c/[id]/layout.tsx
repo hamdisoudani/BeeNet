@@ -23,7 +23,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <CopilotKit
-      runtimeUrl={process.env.NEXT_PUBLIC_COPILOTKIT_RUNTIME_URL || "http://localhost:8000/copilotkit"}
+      runtimeUrl="/api/copilotkit"
       agent="starterAgent"
       showDevConsole={false}
       publicLicenseKey="ck_pub_fa79034fd22de4f39fafa83479af81db"
