@@ -22,14 +22,32 @@ from psycopg_pool import AsyncConnectionPool
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Same lifespan logic as main.py (simplified for serverless/Vercel where lifespan might behave differently)
+    # Initialize Postgres checkpointer
     async with AsyncConnectionPool(
         conninfo=DB_URI,
         max_size=20,
         kwargs={"autocommit": True, "prepare_threshold": 0},
     ) as pool:
-        cp = AsyncPostgresSaver(pool)
-        await cp.setup()
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+
+        # Compile graph with persistence
+        graph = workflow.compile(checkpointer=checkpointer)
+
+        # Initialize Agent with persistent graph
+        agent = LangGraphAGUIAgent(
+            name="starterAgent",
+            description="An example agent to use as a starting point for your own agent.",
+            graph=graph,
+        )
+
+        # Register the endpoint dynamically
+        add_langgraph_fastapi_endpoint(
+            app=app,
+            agent=agent,
+            path="/",
+        )
+
         yield
 
 app = FastAPI(lifespan=lifespan)
@@ -42,18 +60,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(ProxyAuthAndModelMiddleware)
-
-from brain.graph import graph
-
-add_langgraph_fastapi_endpoint(
-  app=app,
-  agent=LangGraphAGUIAgent(
-    name="starterAgent",
-    description="An example agent to use as a starting point for your own agent.",
-    graph=graph,
-  ),
-  path="/",
-)
 
 def main():
     """Run the uvicorn server."""
